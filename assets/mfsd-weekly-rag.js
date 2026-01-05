@@ -241,8 +241,9 @@
     // Add AI chatbot for deeper questions
     if (chatSource && chatSource.firstChild) {
       const chatWrap = el("div","rag-chatwrap");
-      const chatClone = chatSource.firstChild.cloneNode(true);
-      chatWrap.appendChild(chatClone);
+      // Move the original element instead of cloning to preserve event listeners
+      const chatElement = chatSource.firstChild;
+      chatWrap.appendChild(chatElement);
       card.appendChild(chatWrap);
     }
 
