@@ -77,9 +77,9 @@
     }
     
     // If in progress, resume from where they left off
-    if (status.status === 'in_progress' && status.last_question_id) {
+    if (status.status === 'in_progress') {
       await loadQuestions();
-      await resumeFromLastQuestion(status.last_question_id);
+      await resumeFromLastQuestion(status.last_question_id, status.answered_question_ids || []);
       return;
     }
 
@@ -106,29 +106,40 @@
     root.replaceChildren(wrap);
   }
 
-  async function resumeFromLastQuestion(lastQuestionId) {
-    console.log('Resuming from last question:', lastQuestionId);
+  async function resumeFromLastQuestion(lastQuestionId, answeredIds) {
+    console.log('=== RESUME FUNCTION START ===');
+    console.log('Last question ID from DB:', lastQuestionId);
+    console.log('Answered question IDs:', answeredIds);
+    console.log('Total questions loaded:', questions.length);
+    console.log('All question IDs:', questions.map(q => q.id));
     
-    // Find the index of the last answered question
-    let lastIdx = -1;
+    // Find the first unanswered question
+    let firstUnansweredIdx = -1;
     for (let i = 0; i < questions.length; i++) {
-      if (questions[i].id === lastQuestionId) {
-        lastIdx = i;
+      const questionId = parseInt(questions[i].id);
+      const isAnswered = answeredIds.includes(questionId);
+      console.log(`Question ${i + 1} (ID: ${questionId}): ${isAnswered ? 'ANSWERED' : 'NOT ANSWERED'}`);
+      
+      if (!isAnswered) {
+        firstUnansweredIdx = i;
+        console.log('Found first unanswered question at index:', firstUnansweredIdx);
         break;
       }
     }
     
-    if (lastIdx >= 0 && lastIdx < questions.length - 1) {
-      // Start from the next question
-      idx = lastIdx + 1;
-      stack = []; // Could rebuild stack from DB if needed
-      await renderQuestion();
-    } else {
-      // Couldn't find the question or it was the last one, start from beginning
-      idx = 0;
+    if (firstUnansweredIdx >= 0) {
+      // Start from the first unanswered question
+      idx = firstUnansweredIdx;
+      console.log('Resuming from first unanswered question at index:', idx, 'Question ID:', questions[idx].id);
       stack = [];
       await renderQuestion();
+    } else {
+      // All questions answered, show summary
+      console.log('All questions have been answered, showing summary');
+      await renderSummary();
     }
+    
+    console.log('=== RESUME FUNCTION END ===');
   }
 
   async function loadQuestions() {
