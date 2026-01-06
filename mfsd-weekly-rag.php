@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.3.9
+ * Version: 0.4.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.3.9';
+    const VERSION = '0.3.8';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -135,6 +135,7 @@ final class MFSD_Weekly_RAG {
             'restUrlPrevious'     => esc_url_raw(rest_url('mfsd/v1/previous-answer')),
             'restUrlGuidance'     => esc_url_raw(rest_url('mfsd/v1/question-guidance')),
             'restUrlAllWeeks'     => esc_url_raw(rest_url('mfsd/v1/all-weeks-summary')),
+            'restUrlQuestionChat' => esc_url_raw(rest_url('mfsd/v1/question-chat')),
             'nonce'               => wp_create_nonce('wp_rest'),
             'week'                => $week,
         ));
@@ -190,6 +191,12 @@ final class MFSD_Weekly_RAG {
         register_rest_route('mfsd/v1', '/all-weeks-summary', array(
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => array($this, 'api_all_weeks_summary'),
+            'permission_callback' => array($this, 'check_permission'),
+        ));
+
+        register_rest_route('mfsd/v1', '/question-chat', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array($this, 'api_question_chat'),
             'permission_callback' => array($this, 'check_permission'),
         ));
     }
@@ -875,6 +882,92 @@ final class MFSD_Weekly_RAG {
             if ($pid) return (int)$pid;
         }
         return (int)get_current_user_id();
+    }
+
+    public function api_question_chat($req) {
+        global $wpdb;
+        $week = max(1, min(6, (int)$req->get_param('week')));
+        $question_id = (int)$req->get_param('question_id');
+        $user_message = sanitize_text_field($req->get_param('message'));
+        $user_id = $this->get_current_um_user_id();
+        
+        if (!$user_id || !$question_id || !$user_message) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid request'), 400);
+        }
+
+        // Get the question
+        $q_table = $wpdb->prefix . self::TBL_QUESTIONS;
+        $question = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $q_table WHERE id=%d", $question_id
+        ), ARRAY_A);
+
+        if (!$question) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
+        }
+
+        // Get previous answers for context
+        $previous = array();
+        if ($week > 1 && $question['q_type'] === 'RAG') {
+            $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            $previous = $wpdb->get_results($wpdb->prepare(
+                "SELECT week_num, answer FROM $a 
+                 WHERE user_id=%d AND question_id=%d AND week_num < %d 
+                 ORDER BY week_num ASC",
+                $user_id, $question_id, $week
+            ), ARRAY_A);
+        }
+
+        // Generate AI response with context
+        $response = '';
+        if (isset($GLOBALS['mwai'])) {
+            try {
+                $mwai = $GLOBALS['mwai'];
+                $username = um_get_display_name($user_id);
+                
+                // Build context-aware system prompt
+                $systemPrompt = "You are a supportive AI coach helping student $username with Week $week of their High Performance Pathway program. ";
+                $systemPrompt .= "The student is currently reflecting on this question: \"{$question['q_text']}\"\n\n";
+                
+                if ($question['q_type'] === 'MBTI') {
+                    $systemPrompt .= "This is an MBTI personality assessment question. Your role is to:\n";
+                    $systemPrompt .= "- Help them understand what the question is exploring about their personality\n";
+                    $systemPrompt .= "- Guide them to answer honestly (Red = doesn't describe me, Amber = sometimes/unsure, Green = describes me well)\n";
+                    $systemPrompt .= "- Remind them there are no right or wrong answers\n";
+                } else {
+                    $systemPrompt .= "This is a RAG self-assessment question about their skills and readiness. Your role is to:\n";
+                    $systemPrompt .= "- Help them reflect on their current level (Red = struggling/needs support, Amber = mixed/uncertain, Green = confident/strength)\n";
+                    $systemPrompt .= "- Provide practical suggestions if they're unsure\n";
+                    $systemPrompt .= "- Encourage growth mindset thinking\n";
+                    
+                    if (!empty($previous)) {
+                        $systemPrompt .= "\nFor context, in previous weeks this student answered:\n";
+                        foreach ($previous as $ans) {
+                            $label = ($ans['answer'] === 'R') ? 'Red (struggling)' : 
+                                    (($ans['answer'] === 'A') ? 'Amber (mixed)' : 'Green (confident)');
+                            $systemPrompt .= "Week {$ans['week_num']}: $label\n";
+                        }
+                    }
+                }
+                
+                $systemPrompt .= "\nIMPORTANT: Keep your responses concise (2-3 sentences), warm, age-appropriate for 12-14 year olds, and always relate back to THIS specific question. ";
+                $systemPrompt .= "Don't go off-topic or discuss unrelated subjects. Focus on helping them answer THIS question thoughtfully.";
+                
+                // Use AI Engine to generate response
+                $fullPrompt = $systemPrompt . "\n\nStudent asks: " . $user_message;
+                $response = $mwai->simpleTextQuery($fullPrompt);
+                
+            } catch (Exception $e) {
+                error_log('MFSD RAG: Chat error: ' . $e->getMessage());
+                $response = "I'm having trouble connecting right now. Please try asking your question again in a moment.";
+            }
+        } else {
+            $response = "AI assistance is currently unavailable.";
+        }
+
+        return new WP_REST_Response(array(
+            'ok' => true,
+            'response' => $response
+        ), 200);
     }
 
     public function admin_menu() {
