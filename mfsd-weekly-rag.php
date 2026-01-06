@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.4.3
+ * Version: 0.5.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.4.3';
+    const VERSION = '0.5.0';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -358,6 +358,73 @@ final class MFSD_Weekly_RAG {
         
         error_log("MFSD RAG Status: Answered question IDs for week $week: " . implode(', ', $answered_ids));
         
+        // Get previous week summary for weeks 2-6
+        $previous_week_summary = null;
+        $intro_message = null;
+        
+        if ($week > 1 && $status === 'not_started') {
+            $prev_week = $week - 1;
+            $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            
+            // Get previous week's RAG results
+            $prev_rag = $wpdb->get_row($wpdb->prepare("
+                SELECT
+                    SUM(answer='R') AS reds,
+                    SUM(answer='A') AS ambers,
+                    SUM(answer='G') AS greens,
+                    SUM(score) AS total_score
+                FROM $a WHERE user_id=%d AND week_num=%d
+            ", $user_id, $prev_week), ARRAY_A);
+            
+            // Get previous week's MBTI type
+            $mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
+            $prev_mbti = $wpdb->get_var($wpdb->prepare(
+                "SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",
+                $user_id, $prev_week
+            ));
+            
+            if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) {
+                $previous_week_summary = array(
+                    'week' => $prev_week,
+                    'reds' => (int)$prev_rag['reds'],
+                    'ambers' => (int)$prev_rag['ambers'],
+                    'greens' => (int)$prev_rag['greens'],
+                    'total_score' => (int)$prev_rag['total_score'],
+                    'mbti_type' => $prev_mbti
+                );
+                
+                // Generate AI intro message
+                if (isset($GLOBALS['mwai'])) {
+                    try {
+                        $mwai = $GLOBALS['mwai'];
+                        $username = um_get_display_name($user_id);
+                        
+                        $prompt = "You are a supportive coach speaking to $username, aged 12-14, about their High Performance Pathway progress.\n\n";
+                        $prompt .= "Last week (Week $prev_week), they completed a self-assessment with these results:\n";
+                        $prompt .= "- Greens (strengths): {$prev_rag['greens']}\n";
+                        $prompt .= "- Ambers (mixed/uncertain): {$prev_rag['ambers']}\n";
+                        $prompt .= "- Reds (needs support): {$prev_rag['reds']}\n";
+                        
+                        if ($prev_mbti) {
+                            $prompt .= "- MBTI type: $prev_mbti\n";
+                        }
+                        
+                        $prompt .= "\nWrite a brief, warm welcome message for Week $week that:\n";
+                        $prompt .= "1. Acknowledges their Week $prev_week results (be specific about what stood out)\n";
+                        $prompt .= "2. Explains what the RAG colours mean in your own encouraging words\n";
+                        $prompt .= "3. Sets a positive, motivating tone for starting Week $week\n\n";
+                        
+                        $prompt .= "CRITICAL: Address them directly using 'you' and 'your'. Keep it to 3-4 sentences max.\n";
+                        $prompt .= "Be warm, encouraging, and age-appropriate for 12-14 year olds.";
+                        
+                        $intro_message = $mwai->simpleTextQuery($prompt);
+                    } catch (Exception $e) {
+                        error_log('MFSD RAG: Intro message error: ' . $e->getMessage());
+                    }
+                }
+            }
+        }
+        
         return new WP_REST_Response(array(
             'ok' => true, 
             'status' => $status,
@@ -372,7 +439,9 @@ final class MFSD_Weekly_RAG {
             'can_start' => $can_start,
             'blocking_week' => $blocking_week,
             'last_question_id' => $last_question_id ? (int)$last_question_id : null,
-            'answered_question_ids' => $answered_ids
+            'answered_question_ids' => $answered_ids,
+            'previous_week_summary' => $previous_week_summary,
+            'intro_message' => $intro_message
         ), 200);
     }
 

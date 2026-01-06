@@ -88,10 +88,59 @@
     const card = el("div","rag-card");
     card.appendChild(el("h2","rag-title","Week " + week + " — RAG + MBTI Tracker"));
 
-    const p = el("p","rag-sub",
-      "High Performance Pathway RAG + MBTI Weekly Tracker.\n" +
-      "Greens = strengths ; Ambers = mixed ; Reds = needs support.\n");
-    card.appendChild(p);
+    // Show previous week summary for weeks 2-6
+    if (status.previous_week_summary) {
+      const prevSummary = status.previous_week_summary;
+      const summaryBox = el("div","rag-prev-week-summary");
+      summaryBox.style.cssText = "background: #f0f8ff; border-left: 4px solid #4a90e2; padding: 12px 14px; border-radius: 6px; margin: 12px 0;";
+      
+      const summaryTitle = el("div","rag-prev-week-title");
+      summaryTitle.style.cssText = "font-weight: 600; margin-bottom: 6px; color: #2c3e50;";
+      summaryTitle.textContent = "Last Week (Week " + prevSummary.week + ") Results:";
+      summaryBox.appendChild(summaryTitle);
+      
+      const stats = el("div","rag-prev-stats");
+      stats.style.cssText = "display: flex; gap: 12px; margin: 8px 0; flex-wrap: wrap;";
+      
+      const greenStat = el("div","stat");
+      greenStat.style.cssText = "background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; padding: 6px 10px; font-size: 14px;";
+      greenStat.textContent = "🟢 Greens: " + prevSummary.greens;
+      stats.appendChild(greenStat);
+      
+      const amberStat = el("div","stat");
+      amberStat.style.cssText = "background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 6px 10px; font-size: 14px;";
+      amberStat.textContent = "🟠 Ambers: " + prevSummary.ambers;
+      stats.appendChild(amberStat);
+      
+      const redStat = el("div","stat");
+      redStat.style.cssText = "background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 6px; padding: 6px 10px; font-size: 14px;";
+      redStat.textContent = "🔴 Reds: " + prevSummary.reds;
+      stats.appendChild(redStat);
+      
+      if (prevSummary.mbti_type) {
+        const mbtiStat = el("div","stat");
+        mbtiStat.style.cssText = "background: #e8f4fd; border: 1px solid #b8daff; border-radius: 6px; padding: 6px 10px; font-size: 14px; font-weight: 600;";
+        mbtiStat.textContent = "MBTI: " + prevSummary.mbti_type;
+        stats.appendChild(mbtiStat);
+      }
+      
+      summaryBox.appendChild(stats);
+      card.appendChild(summaryBox);
+    }
+
+    // Show AI-generated intro message if available
+    if (status.intro_message) {
+      const introBox = el("div","rag-ai-intro");
+      introBox.style.cssText = "background: #fff8e6; border: 1px solid #ffd966; border-left: 4px solid #f0ad4e; padding: 12px 14px; border-radius: 6px; line-height: 1.6; margin: 12px 0; font-size: 14px; color: #333;";
+      introBox.textContent = status.intro_message;
+      card.appendChild(introBox);
+    } else {
+      // Fallback to static text if no AI message
+      const p = el("p","rag-sub",
+        "High Performance Pathway RAG + MBTI Weekly Tracker.\n" +
+        "Greens = strengths ; Ambers = mixed ; Reds = needs support.\n");
+      card.appendChild(p);
+    }
 
     const btn = el("button","rag-btn","Begin RAG");
     btn.onclick = async () => {
