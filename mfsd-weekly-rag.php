@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.4.2
+ * Version: 0.4.3
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.4.2';
+    const VERSION = '0.4.3';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -527,36 +527,43 @@ final class MFSD_Weekly_RAG {
                 
                 if ($question['q_type'] === 'MBTI') {
                     // MBTI question guidance
-                    $prompt = "This is a personality preference question for student $username: {$question['q_text']}\n\n";
-                    $prompt .= "Please provide a brief, practical explanation of:\n";
-                    $prompt .= "1. What this question is exploring about their personality\n";
-                    $prompt .= "2. What they should consider when answering honestly:\n";
-                    $prompt .= "   - Red = This doesn't describe me\n";
-                    $prompt .= "   - Amber = Sometimes, or I'm unsure\n";
-                    $prompt .= "   - Green = This describes me well\n\n";
-                    $prompt .= "Remind them there are no right or wrong answers - just honest self-reflection.\n";
-                    $prompt .= "Keep the response concise (2-3 sentences), warm, and encouraging.";
+                    $prompt = "You are a supportive coach speaking directly to $username, a student completing a personality assessment.\n\n";
+                    $prompt .= "The question is: \"{$question['q_text']}\"\n\n";
+                    $prompt .= "Write a brief, practical explanation that:\n";
+                    $prompt .= "1. Explains what this question is exploring about their personality\n";
+                    $prompt .= "2. Helps them understand how to answer honestly:\n";
+                    $prompt .= "   - Red = This doesn't describe you\n";
+                    $prompt .= "   - Amber = Sometimes, or you're unsure\n";
+                    $prompt .= "   - Green = This describes you well\n\n";
+                    $prompt .= "Remind them there are no right or wrong answers - just honest self-reflection.\n\n";
+                    $prompt .= "IMPORTANT: Address $username directly using 'you' and 'your' throughout. Speak TO them, not ABOUT them.\n";
+                    $prompt .= "Keep the response concise (2-3 sentences), warm, and encouraging.\n";
+                    $prompt .= "Example opening: 'This question is asking you to reflect on...' NOT 'This question is asking $username to reflect...'";
                 } else {
                     // RAG question guidance
-                    $prompt = "Question for student $username: {$question['q_text']}\n\n";
-                    $prompt .= "Please provide a brief, practical explanation of:\n";
-                    $prompt .= "1. What this question is asking about\n";
-                    $prompt .= "2. What the student should consider when answering:\n";
-                    $prompt .= "   - Red = struggling/needs support\n";
-                    $prompt .= "   - Amber = mixed/uncertain\n";
-                    $prompt .= "   - Green = confident/strength\n";
+                    $prompt = "You are a supportive coach speaking directly to $username, a student completing a self-assessment.\n\n";
+                    $prompt .= "The question is: \"{$question['q_text']}\"\n\n";
+                    $prompt .= "Write a brief, practical explanation that:\n";
+                    $prompt .= "1. Explains what this question is asking them to reflect on\n";
+                    $prompt .= "2. Helps them understand how to answer:\n";
+                    $prompt .= "   - Red = You're struggling or need support\n";
+                    $prompt .= "   - Amber = You have mixed feelings or are uncertain\n";
+                    $prompt .= "   - Green = You feel confident, this is a strength\n";
                     
                     if (!empty($previous)) {
-                        $prompt .= "\nContext: In previous weeks, this student answered:\n";
+                        $prompt .= "\n\nContext: In previous weeks, $username answered:\n";
                         foreach ($previous as $ans) {
                             $label = ($ans['answer'] === 'R') ? 'Red (struggling)' : 
                                     (($ans['answer'] === 'A') ? 'Amber (mixed)' : 'Green (confident)');
                             $prompt .= "Week {$ans['week_num']}: $label\n";
                         }
-                        $prompt .= "\nPlease acknowledge their previous responses and what progress or patterns you notice.\n";
+                        $prompt .= "\nAcknowledge their previous responses and what progress or patterns you notice, speaking directly to them about their journey.\n";
                     }
                     
-                    $prompt .= "\nKeep the response concise (3-4 sentences), warm, encouraging, and practical.";
+                    $prompt .= "\n\nIMPORTANT: Address $username directly using 'you' and 'your' throughout. Speak TO them, not ABOUT them.\n";
+                    $prompt .= "Keep the response concise (3-4 sentences), warm, encouraging, and practical.\n";
+                    $prompt .= "Example opening: 'This question is asking you to reflect on...' NOT 'This question is asking $username to reflect...'\n";
+                    $prompt .= "When discussing their situation, say 'when you faced difficulties' NOT 'when he/she faced difficulties'.";
                 }
                 
                 $guidance = $mwai->simpleTextQuery($prompt);
@@ -948,22 +955,22 @@ final class MFSD_Weekly_RAG {
                 $username = um_get_display_name($user_id);
                 
                 // Build context-aware system prompt
-                $systemPrompt = "You are a supportive AI coach helping student $username with Week $week of their High Performance Pathway program. ";
-                $systemPrompt .= "The student is currently reflecting on this question: \"{$question['q_text']}\"\n\n";
+                $systemPrompt = "You are a supportive AI coach speaking directly to $username (a 12-14 year old student) about Week $week of their High Performance Pathway program. ";
+                $systemPrompt .= "They are currently reflecting on this question: \"{$question['q_text']}\"\n\n";
                 
                 if ($question['q_type'] === 'MBTI') {
                     $systemPrompt .= "This is an MBTI personality assessment question. Your role is to:\n";
                     $systemPrompt .= "- Help them understand what the question is exploring about their personality\n";
-                    $systemPrompt .= "- Guide them to answer honestly (Red = doesn't describe me, Amber = sometimes/unsure, Green = describes me well)\n";
+                    $systemPrompt .= "- Guide them to answer honestly (Red = doesn't describe you, Amber = sometimes/unsure, Green = describes you well)\n";
                     $systemPrompt .= "- Remind them there are no right or wrong answers\n";
                 } else {
                     $systemPrompt .= "This is a RAG self-assessment question about their skills and readiness. Your role is to:\n";
-                    $systemPrompt .= "- Help them reflect on their current level (Red = struggling/needs support, Amber = mixed/uncertain, Green = confident/strength)\n";
+                    $systemPrompt .= "- Help them reflect on their current level (Red = struggling/need support, Amber = mixed/uncertain, Green = confident/strength)\n";
                     $systemPrompt .= "- Provide practical suggestions if they're unsure\n";
                     $systemPrompt .= "- Encourage growth mindset thinking\n";
                     
                     if (!empty($previous)) {
-                        $systemPrompt .= "\nFor context, in previous weeks this student answered:\n";
+                        $systemPrompt .= "\nFor context, in previous weeks they answered:\n";
                         foreach ($previous as $ans) {
                             $label = ($ans['answer'] === 'R') ? 'Red (struggling)' : 
                                     (($ans['answer'] === 'A') ? 'Amber (mixed)' : 'Green (confident)');
@@ -972,7 +979,8 @@ final class MFSD_Weekly_RAG {
                     }
                 }
                 
-                $systemPrompt .= "\nIMPORTANT: Keep your responses concise (2-3 sentences), warm, age-appropriate for 12-14 year olds, and always relate back to THIS specific question. ";
+                $systemPrompt .= "\nCRITICAL: Address $username directly using 'you' and 'your'. Say 'when you faced...' NOT 'when $username faced...' or 'when he/she faced...'\n";
+                $systemPrompt .= "Keep responses concise (2-3 sentences), warm, age-appropriate, and always relate back to THIS specific question. ";
                 $systemPrompt .= "Don't go off-topic or discuss unrelated subjects. Focus on helping them answer THIS question thoughtfully.";
                 
                 // Use AI Engine to generate response
