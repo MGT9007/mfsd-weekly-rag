@@ -582,7 +582,7 @@
       const weekNum = summaryData.week || week;
       card.appendChild(el("h2","rag-title","Week " + weekNum + " Summary"));
 
-      // Week tabs for pie charts
+      // Week tabs for navigation
       if (allWeeksData && allWeeksData.ok && allWeeksData.weeks) {
         const tabsContainer = el("div", "rag-week-tabs");
 
@@ -591,12 +591,10 @@
           if (weekData && weekData.completed) {
             const tab = el("button", "rag-week-tab" + (w === weekNum ? " active" : ""), "Week " + w);
             tab.setAttribute('data-week', w);
-            tab.onclick = function() {
-              document.querySelectorAll('.rag-week-tab').forEach(function(t) {
-                t.classList.remove('active');
-              });
-              tab.classList.add('active');
-              showWeekChart(w, allWeeksData.weeks);
+            tab.onclick = async function() {
+              // Change the global week variable and reload entire summary
+              week = w;
+              await renderSummary();
             };
             tabsContainer.appendChild(tab);
           }
