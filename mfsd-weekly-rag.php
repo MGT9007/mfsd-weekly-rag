@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.4.0
+ * Version: 0.4.1
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.3.8';
+    const VERSION = '0.4.1';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -357,7 +357,7 @@ final class MFSD_Weekly_RAG {
         global $wpdb;
         $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
         return (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $a WHERE user_id=%d AND week_num=%d",
+            "SELECT COUNT(DISTINCT question_id) FROM $a WHERE user_id=%d AND week_num=%d",
             $user_id, $week
         ));
     }
@@ -366,7 +366,7 @@ final class MFSD_Weekly_RAG {
         global $wpdb;
         $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
         return (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $mb WHERE user_id=%d AND week_num=%d",
+            "SELECT COUNT(DISTINCT question_id) FROM $mb WHERE user_id=%d AND week_num=%d",
             $user_id, $week
         ));
     }
@@ -624,6 +624,14 @@ final class MFSD_Weekly_RAG {
             elseif ($answer === 'G') $score = (int) $question['green_score'];
 
             $table_rag = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            
+            // Delete any existing answer for this question to prevent duplicates
+            $wpdb->delete($table_rag, array(
+                'user_id'     => $user_id,
+                'week_num'    => $week_num,
+                'question_id' => $question_id,
+            ), array('%d', '%d', '%d'));
+            
             $inserted = $wpdb->insert($table_rag, array(
                 'user_id'     => $user_id,
                 'week_num'    => $week_num,
@@ -639,6 +647,14 @@ final class MFSD_Weekly_RAG {
             $letter = $mbti_data[1];
 
             $table_mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
+            
+            // Delete any existing answer for this question to prevent duplicates
+            $wpdb->delete($table_mb, array(
+                'user_id'     => $user_id,
+                'week_num'    => $week_num,
+                'question_id' => $question_id,
+            ), array('%d', '%d', '%d'));
+            
             $inserted = $wpdb->insert($table_mb, array(
                 'user_id'     => $user_id,
                 'week_num'    => $week_num,
