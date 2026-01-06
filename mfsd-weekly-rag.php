@@ -2,20 +2,21 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.5.0
+ * Version: 0.6.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.5.0';
+    const VERSION = '0.6.0';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
     const TBL_ANSWERS_RAG = 'mfsd_rag_answers';
     const TBL_ANSWERS_MB = 'mfsd_mbti_answers';
     const TBL_MB_RESULTS = 'mfsd_mbti_results';
+    const TBL_WEEK_SUMMARIES = 'mfsd_week_summaries';
 
     public static function instance() {
         static $i = null;
@@ -38,6 +39,7 @@ final class MFSD_Weekly_RAG {
         $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
         $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
         $mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
+        $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -98,6 +100,22 @@ final class MFSD_Weekly_RAG {
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (id),
           UNIQUE KEY uniq_user_week (user_id, week_num)
+        ) $charset;");
+
+        dbDelta("CREATE TABLE $ws (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          user_id BIGINT UNSIGNED NOT NULL,
+          week_num TINYINT NOT NULL,
+          reds INT NOT NULL DEFAULT 0,
+          ambers INT NOT NULL DEFAULT 0,
+          greens INT NOT NULL DEFAULT 0,
+          total_score INT NOT NULL DEFAULT 0,
+          mbti_type CHAR(4) NULL,
+          ai_summary LONGTEXT NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uniq_user_week (user_id, week_num),
+          KEY idx_user (user_id)
         ) $charset;");
     }
 
@@ -765,6 +783,65 @@ final class MFSD_Weekly_RAG {
             return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
         }
 
+        // Check for cached summary first
+        $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $cached = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",
+            $user_id, $week
+        ), ARRAY_A);
+
+        if ($cached && !empty($cached['ai_summary'])) {
+            // Return cached summary
+            error_log("MFSD RAG: Returning cached summary for week $week, user $user_id");
+            
+            // Get previous weeks for display
+            $previous_weeks = array();
+            if ($week > 1) {
+                $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+                for ($w = 1; $w < $week; $w++) {
+                    $prev_rag = $wpdb->get_row($wpdb->prepare("
+                        SELECT
+                            SUM(answer='R') AS reds,
+                            SUM(answer='A') AS ambers,
+                            SUM(answer='G') AS greens,
+                            SUM(score) AS total_score
+                        FROM $a WHERE user_id=%d AND week_num=%d
+                    ", $user_id, $w), ARRAY_A);
+
+                    $prev_mbti = $wpdb->get_var($wpdb->prepare(
+                        "SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",
+                        $user_id, $w
+                    ));
+
+                    if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) {
+                        $previous_weeks[] = array(
+                            'week' => $w,
+                            'rag' => $prev_rag,
+                            'mbti' => $prev_mbti
+                        );
+                    }
+                }
+            }
+            
+            return new WP_REST_Response(array(
+                'ok'   => true,
+                'week' => $week,
+                'rag'  => array(
+                    'reds' => (int)$cached['reds'],
+                    'ambers' => (int)$cached['ambers'],
+                    'greens' => (int)$cached['greens'],
+                    'total_score' => (int)$cached['total_score']
+                ),
+                'mbti' => $cached['mbti_type'],
+                'ai'   => $cached['ai_summary'],
+                'previous_weeks' => $previous_weeks,
+                'cached' => true
+            ), 200);
+        }
+
+        error_log("MFSD RAG: Generating new summary for week $week, user $user_id");
+
+        // Generate summary (existing code)
         $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
         $agg = $wpdb->get_row($wpdb->prepare("
           SELECT
@@ -827,25 +904,17 @@ final class MFSD_Weekly_RAG {
         }
 
         // Get dream job and career ranking data
-        $dream_job_table = $wpdb->prefix . 'mfsd_dream_jobs';
-        $dream_job = null;
+        $dream_job_table = $wpdb->prefix . 'mfsd_ai_dream_jobs_results';
+        $dream_jobs_ranking = null;
         if ($wpdb->get_var("SHOW TABLES LIKE '$dream_job_table'") == $dream_job_table) {
-            $dream_job = $wpdb->get_row($wpdb->prepare(
-                "SELECT job_title FROM $dream_job_table WHERE user_id=%d ORDER BY created_at DESC LIMIT 1",
+            $dream_jobs_data = $wpdb->get_row($wpdb->prepare(
+                "SELECT ranking_json FROM $dream_job_table WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1",
                 $user_id
             ), ARRAY_A);
-        }
-
-        $career_ranking_table = $wpdb->prefix . 'mfsd_career_rankings';
-        $top_careers = array();
-        if ($wpdb->get_var("SHOW TABLES LIKE '$career_ranking_table'") == $career_ranking_table) {
-            $top_careers = $wpdb->get_results($wpdb->prepare(
-                "SELECT job_title, rank_order FROM $career_ranking_table 
-                 WHERE user_id=%d 
-                 ORDER BY rank_order ASC 
-                 LIMIT 6",
-                $user_id
-            ), ARRAY_A);
+            
+            if ($dream_jobs_data && !empty($dream_jobs_data['ranking_json'])) {
+                $dream_jobs_ranking = json_decode($dream_jobs_data['ranking_json'], true);
+            }
         }
 
         $aiIntro = '';
@@ -854,14 +923,14 @@ final class MFSD_Weekly_RAG {
                 $mwai = $GLOBALS['mwai'];
                 $username = um_get_display_name($user_id);
                 
-                $aiPrompt = "High Performance Pathway - Week $week Summary for $username\n\n";
-                $aiPrompt .= "===CURRENT WEEK ($week) RESULTS===\n";
-                $aiPrompt .= "RAG: {$agg['reds']} Red, {$agg['ambers']} Amber, {$agg['greens']} Green (Score: {$agg['total_score']})\n";
-                $aiPrompt .= "MBTI Type: " . ($type ?: 'undetermined') . "\n\n";
+                $aiPrompt = "You are a supportive coach speaking to $username (aged 12-14) about their High Performance Pathway progress.\n\n";
+                $aiPrompt .= "===WEEK $week RESULTS===\n";
+                $aiPrompt .= "RAG Assessment: {$agg['reds']} Reds, {$agg['ambers']} Ambers, {$agg['greens']} Greens (Total Score: {$agg['total_score']})\n";
+                $aiPrompt .= "MBTI Personality Type: " . ($type ?: 'undetermined') . "\n\n";
                 
                 // Add previous weeks comparison
                 if (!empty($previous_weeks)) {
-                    $aiPrompt .= "===PREVIOUS WEEKS FOR COMPARISON===\n";
+                    $aiPrompt .= "===PROGRESS OVER TIME===\n";
                     foreach ($previous_weeks as $pw) {
                         $aiPrompt .= "Week {$pw['week']}: {$pw['rag']['reds']}R / {$pw['rag']['ambers']}A / {$pw['rag']['greens']}G (Score: {$pw['rag']['total_score']})";
                         if ($pw['mbti']) {
@@ -873,37 +942,53 @@ final class MFSD_Weekly_RAG {
                 }
                 
                 // Add career information
-                if ($dream_job && isset($dream_job['job_title'])) {
-                    $aiPrompt .= "Dream Job: {$dream_job['job_title']}\n";
-                }
-                
-                if (!empty($top_careers)) {
-                    $aiPrompt .= "Top Ranked Careers:\n";
-                    foreach ($top_careers as $i => $career) {
-                        $aiPrompt .= ($i + 1) . ". {$career['job_title']}\n";
+                if (!empty($dream_jobs_ranking) && is_array($dream_jobs_ranking)) {
+                    $aiPrompt .= "Their Dream Jobs (ranked):\n";
+                    foreach (array_slice($dream_jobs_ranking, 0, 5) as $i => $job) {
+                        $aiPrompt .= ($i + 1) . ". $job\n";
                     }
                     $aiPrompt .= "\n";
                 }
                 
                 $aiPrompt .= "===YOUR TASK===\n";
-                $aiPrompt .= "Provide a warm, insightful summary that:\n";
-                $aiPrompt .= "1. Highlights this week's RAG results\n";
+                $aiPrompt .= "Write a warm, insightful summary that:\n";
+                $aiPrompt .= "1. Celebrates their strengths (Greens) specifically\n";
                 if (!empty($previous_weeks)) {
-                    $aiPrompt .= "2. Compares to previous weeks - note trends, improvements, or areas needing attention\n";
-                    $aiPrompt .= "3. Comments on MBTI consistency or changes across weeks\n";
+                    $aiPrompt .= "2. Highlights progress or trends compared to previous weeks\n";
+                    $aiPrompt .= "3. Addresses any consistency or changes in MBTI type\n";
                 } else {
-                    $aiPrompt .= "2. Explains the MBTI type (" . ($type ?: 'undetermined') . ") and its strengths\n";
+                    $aiPrompt .= "2. Explains their MBTI type (" . ($type ?: 'undetermined') . ") and key strengths\n";
                 }
-                if ($dream_job || !empty($top_careers)) {
-                    $aiPrompt .= "4. Relates MBTI type to their career aspirations\n";
+                $aiPrompt .= "4. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+                if (!empty($dream_jobs_ranking)) {
+                    $aiPrompt .= "5. Connects their personality and results to their dream jobs\n";
                 }
-                $aiPrompt .= "5. Provides 2-3 specific, actionable next steps\n\n";
-                $aiPrompt .= "Be encouraging, specific, and practical. UK context.";
+                $aiPrompt .= "6. Provides 2-3 specific, actionable next steps for this week\n\n";
+                
+                $aiPrompt .= "CRITICAL: Address them directly using 'you' and 'your'. Be encouraging, specific, and practical.\n";
+                $aiPrompt .= "Use UK context. Keep to 4-5 paragraphs max. Use Steve's Solutions Mindset principles.";
                 
                 $aiIntro = $mwai->simpleTextQuery($aiPrompt);
             } catch (Exception $e) { 
+                error_log('MFSD RAG: AI summary generation error: ' . $e->getMessage());
                 $aiIntro = ''; 
             }
+        }
+
+        // Save summary to database for future use
+        if (!empty($aiIntro)) {
+            $wpdb->replace($ws, array(
+                'user_id' => $user_id,
+                'week_num' => $week,
+                'reds' => (int)$agg['reds'],
+                'ambers' => (int)$agg['ambers'],
+                'greens' => (int)$agg['greens'],
+                'total_score' => (int)$agg['total_score'],
+                'mbti_type' => $type,
+                'ai_summary' => $aiIntro
+            ), array('%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s'));
+            
+            error_log("MFSD RAG: Saved summary to cache for week $week, user $user_id");
         }
 
         return new WP_REST_Response(array(
@@ -912,7 +997,8 @@ final class MFSD_Weekly_RAG {
             'rag'  => $agg,
             'mbti' => $type,
             'ai'   => $aiIntro,
-            'previous_weeks' => $previous_weeks
+            'previous_weeks' => $previous_weeks,
+            'cached' => false
         ), 200);
     }
 
