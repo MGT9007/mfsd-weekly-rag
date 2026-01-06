@@ -582,11 +582,21 @@
       const weekNum = summaryData.week || week;
       card.appendChild(el("h2","rag-title","Week " + weekNum + " Summary"));
 
-      // Week tabs for navigation
+      // Week tabs for navigation - show ALL completed weeks
       if (allWeeksData && allWeeksData.ok && allWeeksData.weeks) {
         const tabsContainer = el("div", "rag-week-tabs");
+        
+        // Find the highest completed week
+        let maxCompletedWeek = 0;
+        for (let w = 1; w <= 6; w++) {
+          const weekData = allWeeksData.weeks[w];
+          if (weekData && weekData.completed) {
+            maxCompletedWeek = w;
+          }
+        }
 
-        for (let w = 1; w <= weekNum; w++) {
+        // Show buttons for all completed weeks (not just up to current)
+        for (let w = 1; w <= maxCompletedWeek; w++) {
           const weekData = allWeeksData.weeks[w];
           if (weekData && weekData.completed) {
             const tab = el("button", "rag-week-tab" + (w === weekNum ? " active" : ""), "Week " + w);
