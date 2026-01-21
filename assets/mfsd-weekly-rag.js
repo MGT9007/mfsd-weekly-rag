@@ -789,5 +789,608 @@
     console.log('Pie chart drawn successfully');
   }
 
+  // ============================================================================
+// DISC POLAR PLOT VISUALIZATION
+// Addittional code for DISC
+// ============================================================================
+
+// DISC Descriptions (age-appropriate for 12-14 year olds)
+const DISC_DESCRIPTIONS = {
+  "D": {
+    "title": "Dominance (D) - The Leader",
+    "short": "You like to take charge and get things done! You're confident, direct, and love a good challenge.",
+    "strengths": "You're brave, determined, and great at making quick decisions.",
+    "growth": "Sometimes remember to slow down and listen to others' ideas.",
+    "tip": "Your leadership skills are awesome! Try letting others share their thoughts too."
+  },
+  "I": {
+    "title": "Influence (I) - The Enthusiast",
+    "short": "You're fun, friendly, and love being around people! You make friends easily.",
+    "strengths": "You're optimistic, creative, and amazing at bringing people together.",
+    "growth": "Try to stay focused on finishing what you start.",
+    "tip": "Your positive energy brightens everyone's day! Balance fun with getting stuff done."
+  },
+  "S": {
+    "title": "Steadiness (S) - The Supporter",
+    "short": "You're calm, loyal, and a great friend. People know they can count on you.",
+    "strengths": "You're patient, reliable, and an excellent listener.",
+    "growth": "It's okay to share your own opinions and try new things!",
+    "tip": "Your steady support means so much to others. Don't be afraid to speak up too!"
+  },
+  "C": {
+    "title": "Conscientiousness (C) - The Thinker",
+    "short": "You're thoughtful, detail-oriented, and love getting things right.",
+    "strengths": "You're careful, organized, and produce high-quality work.",
+    "growth": "Remember that sometimes 'good enough' is okay - not everything needs to be perfect.",
+    "tip": "Your attention to detail is a superpower! It's okay to make mistakes sometimes."
+  },
+  "DI": {
+    "title": "Dominance + Influence - The Inspiring Leader",
+    "short": "You're confident and outgoing! You love leading groups and getting people excited.",
+    "strengths": "You're energetic, persuasive, and great at motivating others.",
+    "growth": "Try to pause and listen to quieter voices in the group.",
+    "tip": "You're a natural leader who people want to follow! Balance your energy with patience."
+  },
+  "DC": {
+    "title": "Dominance + Conscientiousness - The Strategic Leader",
+    "short": "You're determined and smart! You set high goals and make detailed plans.",
+    "strengths": "You're focused, analytical, and excellent at solving complex problems.",
+    "growth": "Try to be flexible when plans change.",
+    "tip": "Your combination of drive and thinking skills is powerful!"
+  },
+  "IS": {
+    "title": "Influence + Steadiness - The Friendly Helper",
+    "short": "You're warm, kind, and love working with others. You make everyone feel welcome.",
+    "strengths": "You're empathetic, supportive, and create harmony in groups.",
+    "growth": "It's okay to say 'no' sometimes and share when you disagree.",
+    "tip": "Your caring nature is a gift! Don't forget to take care of yourself too."
+  },
+  "IC": {
+    "title": "Influence + Conscientiousness - The Creative Planner",
+    "short": "You're friendly and organized! You enjoy working with people while doing things well.",
+    "strengths": "You're sociable yet detail-oriented.",
+    "growth": "Try not to worry too much about what others think.",
+    "tip": "You balance fun and focus really well! Believe in yourself."
+  },
+  "SC": {
+    "title": "Steadiness + Conscientiousness - The Reliable Achiever",
+    "short": "You're calm, careful, and dependable. You take time to do things properly.",
+    "strengths": "You're patient, thorough, and consistently produce great work.",
+    "growth": "Try to be more comfortable with change and taking risks.",
+    "tip": "Your steady, quality work is amazing! Don't be afraid to try new things."
+  },
+  "DS": {
+    "title": "Dominance + Steadiness - The Determined Supporter",
+    "short": "You're strong-willed yet patient. You stand up for what's right while staying calm.",
+    "strengths": "You're resilient, dependable, and balance taking charge with being supportive.",
+    "growth": "Try to be more flexible and open to different approaches.",
+    "tip": "Your mix of strength and stability is unique!"
+  },
+  "CD": {
+    "title": "Conscientiousness + Dominance - The Strategic Achiever",
+    "short": "You're thoughtful and driven! You plan carefully and work hard to make things happen.",
+    "strengths": "You're logical, determined, and great at turning ideas into reality.",
+    "growth": "Remember to collaborate and hear others out.",
+    "tip": "Your planning and drive combo is strong! Include others for even better results."
+  },
+  "ID": {
+    "title": "Influence + Dominance - The Dynamic Motivator",
+    "short": "You're energetic and confident! You love getting people excited and leading them.",
+    "strengths": "You're charismatic, action-oriented, and amazing at rallying people together.",
+    "growth": "Take time to think things through before jumping in.",
+    "tip": "Your energy and leadership inspire others! Balance enthusiasm with planning."
+  },
+  "SI": {
+    "title": "Steadiness + Influence - The Caring Connector",
+    "short": "You're friendly and supportive! You build strong friendships and help everyone get along.",
+    "strengths": "You're warm, sociable, and create positive environments.",
+    "growth": "Practice being more assertive and making quick decisions.",
+    "tip": "Your ability to connect people is special! Trust yourself to take the lead sometimes."
+  },
+  "CS": {
+    "title": "Conscientiousness + Steadiness - The Thoughtful Supporter",
+    "short": "You're careful and patient. You think things through and work steadily toward goals.",
+    "strengths": "You're methodical, reliable, and produce consistent quality work.",
+    "growth": "Try to be more comfortable with uncertainty and faster decisions.",
+    "tip": "Your careful approach creates great results! Challenge yourself to try quick decisions."
+  },
+  "CI": {
+    "title": "Conscientiousness + Influence - The Analytical Communicator",
+    "short": "You're detail-focused and friendly! You explain complex things clearly.",
+    "strengths": "You're precise yet personable. You make complicated ideas easy to understand!",
+    "growth": "Don't worry too much about being perfect in social situations.",
+    "tip": "Your mix of smarts and social skills is valuable! Relax and trust yourself."
+  }
+};
+
+/**
+ * Create DISC polar plot using Canvas
+ * @param {Object} scores - Object with D, I, S, C scores (normalized 0-100)
+ * @param {string} primaryStyle - Primary DISC style (e.g., "D", "DI")
+ * @returns {HTMLCanvasElement} - Canvas element with the plot
+ */
+function createDISCPolarPlot(scores, primaryStyle) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 400;
+  canvas.height = 400;
+  canvas.id = 'disc-polar-plot';
+  
+  const ctx = canvas.getContext('2d');
+  const centerX = 200;
+  const centerY = 200;
+  const maxRadius = 160;
+  
+  // Background
+  ctx.fillStyle = '#f0f2f6';
+  ctx.fillRect(0, 0, 400, 400);
+  
+  // Draw concentric circles (grid)
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1;
+  for (let r = 40; r <= maxRadius; r += 40) {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, r, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+  
+  // Draw axes
+  ctx.strokeStyle = '#a0a0a0';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  
+  // Vertical axis
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY - maxRadius);
+  ctx.lineTo(centerX, centerY + maxRadius);
+  ctx.stroke();
+  
+  // Horizontal axis
+  ctx.beginPath();
+  ctx.moveTo(centerX - maxRadius, centerY);
+  ctx.lineTo(centerX + maxRadius, centerY);
+  ctx.stroke();
+  
+  ctx.setLineDash([]);
+  
+  // Define angles for each dimension (in radians)
+  const angles = {
+    'D': 7 * Math.PI / 4,  // 315° (upper right)
+    'I': Math.PI / 4,      // 45° (upper left)
+    'S': 3 * Math.PI / 4,  // 135° (lower left)
+    'C': 5 * Math.PI / 4   // 225° (lower right)
+  };
+  
+  // Draw labels
+  ctx.font = 'bold 20px Arial';
+  ctx.fillStyle = '#333';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  const labelRadius = maxRadius + 25;
+  
+  ctx.fillText('D', centerX + labelRadius * Math.cos(angles['D']), 
+                    centerY - labelRadius * Math.sin(angles['D']));
+  ctx.fillText('I', centerX + labelRadius * Math.cos(angles['I']), 
+                    centerY - labelRadius * Math.sin(angles['I']));
+  ctx.fillText('S', centerX + labelRadius * Math.cos(angles['S']), 
+                    centerY - labelRadius * Math.sin(angles['S']));
+  ctx.fillText('C', centerX + labelRadius * Math.cos(angles['C']), 
+                    centerY - labelRadius * Math.sin(angles['C']));
+  
+  // Calculate vector components
+  const scaled = {
+    'D': scores.D / 100,
+    'I': scores.I / 100,
+    'S': scores.S / 100,
+    'C': scores.C / 100
+  };
+  
+  let totalX = 0;
+  let totalY = 0;
+  
+  for (const [dim, score] of Object.entries(scaled)) {
+    const angle = angles[dim];
+    totalX += score * Math.cos(angle);
+    totalY += score * Math.sin(angle);
+  }
+  
+  // Calculate resultant
+  const magnitude = Math.sqrt(totalX * totalX + totalY * totalY);
+  const resultantAngle = Math.atan2(totalY, totalX);
+  
+  // Draw individual dimension vectors (faint)
+  ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+  ctx.lineWidth = 2;
+  
+  for (const [dim, score] of Object.entries(scaled)) {
+    const angle = angles[dim];
+    const endX = centerX + (score * maxRadius * Math.cos(angle));
+    const endY = centerY - (score * maxRadius * Math.sin(angle));
+    
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  }
+  
+  // Draw resultant vector (prominent)
+  const resultX = centerX + (magnitude * maxRadius * Math.cos(resultantAngle));
+  const resultY = centerY - (magnitude * maxRadius * Math.sin(resultantAngle));
+  
+  // Arrow line
+  ctx.strokeStyle = '#4CAF50';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(centerX, centerY);
+  ctx.lineTo(resultX, resultY);
+  ctx.stroke();
+  
+  // Arrow head
+  const arrowSize = 12;
+  const arrowAngle = Math.PI / 6;
+  
+  ctx.fillStyle = '#4CAF50';
+  ctx.beginPath();
+  ctx.moveTo(resultX, resultY);
+  ctx.lineTo(
+    resultX - arrowSize * Math.cos(resultantAngle - arrowAngle),
+    resultY + arrowSize * Math.sin(resultantAngle - arrowAngle)
+  );
+  ctx.lineTo(
+    resultX - arrowSize * Math.cos(resultantAngle + arrowAngle),
+    resultY + arrowSize * Math.sin(resultantAngle + arrowAngle)
+  );
+  ctx.closePath();
+  ctx.fill();
+  
+  // Draw point at the end
+  ctx.fillStyle = '#4CAF50';
+  ctx.beginPath();
+  ctx.arc(resultX, resultY, 8, 0, 2 * Math.PI);
+  ctx.fill();
+  
+  // Add border to canvas
+  ctx.strokeStyle = '#e5e5e5';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(0, 0, 400, 400);
+  
+  return canvas;
+}
+
+/**
+ * Render DISC results in the summary
+ * Add this inside your renderSummary() function
+ * @param {Object} summaryData - Summary data from API including disc_results
+ */
+function renderDISCResults(summaryData) {
+  if (!summaryData.disc_type || !summaryData.disc_scores) {
+    return null;
+  }
+  
+  const discCard = el("div", "rag-card");
+  discCard.style.cssText = "margin-top: 20px;";
+  
+  // Title
+  const title = el("h3", "rag-title", "🎯 Your DISC Personality Style");
+  discCard.appendChild(title);
+  
+  // Primary style with description
+  const desc = DISC_DESCRIPTIONS[summaryData.disc_type];
+  
+  if (desc) {
+    const styleHeader = el("div", "disc-style-header");
+    styleHeader.style.cssText = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px; border-radius: 10px; margin: 12px 0;";
+    
+    const styleTitle = el("h4", "");
+    styleTitle.style.cssText = "margin: 0 0 8px 0; font-size: 20px;";
+    styleTitle.textContent = desc.title;
+    styleHeader.appendChild(styleTitle);
+    
+    const styleShort = el("p", "");
+    styleShort.style.cssText = "margin: 0; font-size: 15px; line-height: 1.5;";
+    styleShort.textContent = desc.short;
+    styleHeader.appendChild(styleShort);
+    
+    discCard.appendChild(styleHeader);
+  }
+  
+  // Create polar plot
+  const plotContainer = el("div", "disc-plot-container");
+  plotContainer.style.cssText = "display: flex; flex-direction: column; align-items: center; margin: 20px 0; background: white; padding: 20px; border-radius: 12px; border: 1px solid #e5e5e5;";
+  
+  const plotTitle = el("h4", "");
+  plotTitle.style.cssText = "margin: 0 0 16px 0; color: #2c3e50; font-size: 18px;";
+  plotTitle.textContent = "Your DISC Profile Visualization";
+  plotContainer.appendChild(plotTitle);
+  
+  const canvas = createDISCPolarPlot(summaryData.disc_scores, summaryData.disc_type);
+  plotContainer.appendChild(canvas);
+  
+  const plotCaption = el("p", "");
+  plotCaption.style.cssText = "margin: 12px 0 0 0; font-size: 13px; color: #666; text-align: center; max-width: 360px;";
+  plotCaption.textContent = "The green arrow shows your unique personality blend. Each dimension contributes to where you land on the plot.";
+  plotContainer.appendChild(plotCaption);
+  
+  discCard.appendChild(plotContainer);
+  
+  // Score breakdown with percentages
+  const breakdownTitle = el("h4", "");
+  breakdownTitle.style.cssText = "margin: 20px 0 12px 0; color: #2c3e50; font-size: 17px;";
+  breakdownTitle.textContent = "Your DISC Breakdown";
+  discCard.appendChild(breakdownTitle);
+  
+  const breakdown = el("div", "disc-breakdown");
+  breakdown.style.cssText = "display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0;";
+  
+  const dimensions = [
+    { key: 'D', label: 'Dominance', color: '#e74c3c' },
+    { key: 'I', label: 'Influence', color: '#f39c12' },
+    { key: 'S', label: 'Steadiness', color: '#2ecc71' },
+    { key: 'C', label: 'Conscientiousness', color: '#3498db' }
+  ];
+  
+  dimensions.forEach(dim => {
+    const score = summaryData.disc_scores[dim.key];
+    const bar = el("div", "disc-bar");
+    bar.style.cssText = `
+      background: linear-gradient(to top, ${dim.color}, ${dim.color}dd);
+      border-radius: 8px;
+      padding: 12px 8px;
+      color: white;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 120px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    `;
+    
+    const label = el("div", "");
+    label.style.cssText = "font-weight: 600; font-size: 16px;";
+    label.textContent = dim.key;
+    bar.appendChild(label);
+    
+    const percent = el("div", "");
+    percent.style.cssText = "font-size: 24px; font-weight: bold; margin: 8px 0;";
+    percent.textContent = Math.round(score.percent) + "%";
+    bar.appendChild(percent);
+    
+    const name = el("div", "");
+    name.style.cssText = "font-size: 11px; opacity: 0.9;";
+    name.textContent = dim.label;
+    bar.appendChild(name);
+    
+    breakdown.appendChild(bar);
+  });
+  
+  discCard.appendChild(breakdown);
+  
+  // Personality insights
+  if (desc) {
+    const insights = el("div", "disc-insights");
+    insights.style.cssText = "background: #f8f9fa; border-radius: 8px; padding: 16px; margin: 16px 0;";
+    
+    const strengthsBox = el("div", "");
+    strengthsBox.style.cssText = "margin-bottom: 12px;";
+    const strengthsLabel = el("strong", "");
+    strengthsLabel.textContent = "💪 Your Strengths: ";
+    strengthsBox.appendChild(strengthsLabel);
+    strengthsBox.appendChild(document.createTextNode(desc.strengths));
+    insights.appendChild(strengthsBox);
+    
+    const growthBox = el("div", "");
+    growthBox.style.cssText = "margin-bottom: 12px;";
+    const growthLabel = el("strong", "");
+    growthLabel.textContent = "🌱 Room to Grow: ";
+    growthBox.appendChild(growthLabel);
+    growthBox.appendChild(document.createTextNode(desc.growth));
+    insights.appendChild(growthBox);
+    
+    const tipBox = el("div", "");
+    tipBox.style.cssText = "background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 4px solid #f0ad4e;";
+    const tipLabel = el("strong", "");
+    tipLabel.textContent = "💡 Tip: ";
+    tipBox.appendChild(tipLabel);
+    tipBox.appendChild(document.createTextNode(desc.tip));
+    insights.appendChild(tipBox);
+    
+    discCard.appendChild(insights);
+  }
+  
+  return discCard;
+}
+
+// ============================================================================
+// EXAMPLE: How to integrate into your renderSummary() function
+// ============================================================================
+
+async function renderSummary() {
+  showLoading('Calculating your results...');
+  
+  try {
+    const res = await fetch(cfg.restUrlSummary, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WP-Nonce': cfg.nonce || ''
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({ week: week })
+    });
+    
+    if (!res.ok) throw new Error('Failed to get summary');
+    
+    const data = await res.json();
+    hideLoading();
+    
+    if (!data.ok) throw new Error(data.error || 'Failed');
+    
+    const wrap = el("div", "rag-wrap");
+    
+    // ... existing RAG summary card code ...
+    
+    // MBTI card (if present)
+    if (data.mbti_type) {
+      // ... existing MBTI code ...
+    }
+    
+    // DISC card (if present) - ADD THIS
+    if (data.disc_type) {
+      const discCard = renderDISCResults({
+        disc_type: data.disc_type,
+        disc_scores: {
+          D: data.disc_scores.D,
+          I: data.disc_scores.I,
+          S: data.disc_scores.S,
+          C: data.disc_scores.C
+        }
+      });
+      
+      if (discCard) {
+        wrap.appendChild(discCard);
+      }
+    }
+    
+    // ... rest of your summary code ...
+    
+    root.replaceChildren(wrap);
+    
+  } catch (err) {
+    hideLoading();
+    console.error('Summary error:', err);
+    alert('Error loading summary: ' + err.message);
+  }
+}
+
+// ============================================================================
+// DISC ANSWER HANDLING
+// Add this function to handle DISC question answers
+// ============================================================================
+
+async function handleDISCAnswer(question, answerValue) {
+  showLoading('Saving your answer...');
+  
+  try {
+    const mapping = question.disc_mapping;
+    const contribution = answerValue - 3; // Convert 1-5 scale to -2 to +2
+    
+    const payload = {
+      week: week,
+      question_id: question.id,
+      q_type: 'DISC',
+      answer: answerValue,
+      d_contribution: mapping.D * contribution,
+      i_contribution: mapping.I * contribution,
+      s_contribution: mapping.S * contribution,
+      c_contribution: mapping.C * contribution
+    };
+    
+    const res = await fetch(cfg.restUrlAnswer, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-WP-Nonce': cfg.nonce || ''
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    });
+    
+    if (!res.ok) throw new Error('Failed to save answer');
+    
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Failed');
+    
+    hideLoading();
+    
+    // Move to next question or summary
+    idx++;
+    if (idx < questions.length) {
+      await renderQuestion();
+    } else {
+      await renderSummary();
+    }
+    
+  } catch (err) {
+    hideLoading();
+    console.error('Error saving DISC answer:', err);
+    alert('Error saving answer: ' + err.message);
+  }
+}
+
+// ============================================================================
+// UPDATE YOUR renderQuestion() FUNCTION
+// Add DISC question rendering
+// ============================================================================
+
+// Inside renderQuestion(), add this case for DISC questions:
+if (q.q_type === 'DISC') {
+  // DISC uses 1-5 Likert scale
+  const scaleContainer = el("div", "disc-scale-container");
+  scaleContainer.style.cssText = "margin: 20px 0;";
+  
+  const scaleLabel = el("div", "disc-scale-label");
+  scaleLabel.style.cssText = "text-align: center; margin-bottom: 12px; font-weight: 600; color: #555;";
+  scaleLabel.textContent = "How much do you agree with this statement?";
+  scaleContainer.appendChild(scaleLabel);
+  
+  const lights = el("div", "rag-lights");
+  lights.style.cssText = "display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;";
+  
+  const options = [
+    { label: "Completely\nDisagree", value: 1, color: "#d9534f", emoji: "👎" },
+    { label: "Somewhat\nDisagree", value: 2, color: "#f0ad4e", emoji: "🤔" },
+    { label: "Neutral", value: 3, color: "#9e9e9e", emoji: "😐" },
+    { label: "Somewhat\nAgree", value: 4, color: "#5cb85c", emoji: "👍" },
+    { label: "Completely\nAgree", value: 5, color: "#4caf50", emoji: "💯" }
+  ];
+  
+  options.forEach(opt => {
+    const btn = el("button", "rag-light disc-scale-btn");
+    btn.style.cssText = `
+      background: ${opt.color};
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 16px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      min-width: 90px;
+      transition: all 0.2s;
+      white-space: pre-line;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    `;
+    
+    const emoji = el("span", "");
+    emoji.style.cssText = "font-size: 24px;";
+    emoji.textContent = opt.emoji;
+    btn.appendChild(emoji);
+    
+    const label = el("span", "");
+    label.style.cssText = "font-size: 12px; line-height: 1.3;";
+    label.textContent = opt.label.replace('\n', ' ');
+    btn.appendChild(label);
+    
+    btn.onmouseover = () => {
+      btn.style.transform = "translateY(-3px)";
+      btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
+    };
+    btn.onmouseout = () => {
+      btn.style.transform = "translateY(0)";
+      btn.style.boxShadow = "none";
+    };
+    btn.onclick = () => handleDISCAnswer(q, opt.value);
+    
+    lights.appendChild(btn);
+  });
+  
+  scaleContainer.appendChild(lights);
+  card.appendChild(scaleContainer);
+}
+
   renderIntro();
 })();
