@@ -789,9 +789,10 @@
     console.log('Pie chart drawn successfully');
   }
 
-  // ============================================================================
+  renderIntro();
+})();// ============================================================================
 // DISC POLAR PLOT VISUALIZATION
-// Addittional code for DISC
+// Add this to your mfsd-weekly-rag.js file
 // ============================================================================
 
 // DISC Descriptions (age-appropriate for 12-14 year olds)
@@ -1391,6 +1392,3 @@ if (q.q_type === 'DISC') {
   scaleContainer.appendChild(lights);
   card.appendChild(scaleContainer);
 }
-
-  renderIntro();
-})();
