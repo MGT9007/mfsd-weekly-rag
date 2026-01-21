@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.7.7
+ * Version: 0.7.8
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.7.7';
+    const VERSION = '0.7.8';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -827,6 +827,128 @@ final class MFSD_Weekly_RAG {
         }
 
         return new WP_REST_Response(array('ok' => true, 'message' => 'Saved', 'answer_id' => $wpdb->insert_id), 200);
+    }
+
+private function calculate_disc_results($user_id, $week) {
+        global $wpdb;
+        $disc = $wpdb->prefix . self::TBL_ANSWERS_DISC;
+        
+        // Get all DISC answers for this week
+        $answers = $wpdb->get_results($wpdb->prepare("
+            SELECT d_contribution, i_contribution, s_contribution, c_contribution
+            FROM $disc WHERE user_id=%d AND week_num=%d
+        ", $user_id, $week), ARRAY_A);
+        
+        if (empty($answers)) {
+            return null;
+        }
+        
+        // Calculate raw scores
+        $raw_d = 0;
+        $raw_i = 0;
+        $raw_s = 0;
+        $raw_c = 0;
+        
+        foreach ($answers as $ans) {
+            $raw_d += (int)$ans['d_contribution'];
+            $raw_i += (int)$ans['i_contribution'];
+            $raw_s += (int)$ans['s_contribution'];
+            $raw_c += (int)$ans['c_contribution'];
+        }
+        
+        // Calculate max possible score
+        $q = $wpdb->prefix . self::TBL_QUESTIONS;
+        $wkcol = 'w' . $week;
+        $disc_questions = $wpdb->get_results("
+            SELECT disc_mapping FROM $q 
+            WHERE $wkcol=1 AND q_type='DISC' AND disc_mapping IS NOT NULL
+        ", ARRAY_A);
+        
+        $max_possible = 0;
+        foreach ($disc_questions as $dq) {
+            $mapping = json_decode($dq['disc_mapping'], true);
+            if ($mapping) {
+                $max_d = abs($mapping['D']) * 2;
+                $max_i = abs($mapping['I']) * 2;
+                $max_s = abs($mapping['S']) * 2;
+                $max_c = abs($mapping['C']) * 2;
+                $max_possible += max($max_d, $max_i, $max_s, $max_c);
+            }
+        }
+        
+        if ($max_possible == 0) {
+            return null;
+        }
+        
+        // Normalize to 0-100
+        $norm_d = (($raw_d + $max_possible) / (2 * $max_possible)) * 100;
+        $norm_i = (($raw_i + $max_possible) / (2 * $max_possible)) * 100;
+        $norm_s = (($raw_s + $max_possible) / (2 * $max_possible)) * 100;
+        $norm_c = (($raw_c + $max_possible) / (2 * $max_possible)) * 100;
+        
+        // Ensure within bounds
+        $norm_d = max(0, min(100, $norm_d));
+        $norm_i = max(0, min(100, $norm_i));
+        $norm_s = max(0, min(100, $norm_s));
+        $norm_c = max(0, min(100, $norm_c));
+        
+        // Calculate relative percentages
+        $total = $norm_d + $norm_i + $norm_s + $norm_c;
+        
+        if ($total > 0) {
+            $pct_d = ($norm_d / $total) * 100;
+            $pct_i = ($norm_i / $total) * 100;
+            $pct_s = ($norm_s / $total) * 100;
+            $pct_c = ($norm_c / $total) * 100;
+        } else {
+            $pct_d = $pct_i = $pct_s = $pct_c = 25;
+        }
+        
+        // Determine primary style
+        $scores = array(
+            'D' => $norm_d,
+            'I' => $norm_i,
+            'S' => $norm_s,
+            'C' => $norm_c
+        );
+        arsort($scores);
+        $top_keys = array_keys($scores);
+        
+        $primary_style = $top_keys[0];
+        if (count($top_keys) > 1 && abs($scores[$top_keys[0]] - $scores[$top_keys[1]]) < 20) {
+            $primary_style = $top_keys[0] . $top_keys[1];
+        }
+        
+        // Save results
+        $discr = $wpdb->prefix . self::TBL_DISC_RESULTS;
+        $wpdb->replace($discr, array(
+            'user_id' => $user_id,
+            'week_num' => $week,
+            'd_score' => $raw_d,
+            'i_score' => $raw_i,
+            's_score' => $raw_s,
+            'c_score' => $raw_c,
+            'd_normalized' => round($norm_d, 2),
+            'i_normalized' => round($norm_i, 2),
+            's_normalized' => round($norm_s, 2),
+            'c_normalized' => round($norm_c, 2),
+            'd_percent' => round($pct_d, 2),
+            'i_percent' => round($pct_i, 2),
+            's_percent' => round($pct_s, 2),
+            'c_percent' => round($pct_c, 2),
+            'primary_style' => $primary_style
+        ), array('%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', 
+                 '%s', '%s', '%s', '%s', '%s'));
+        
+        return array(
+            'disc_type' => $primary_style,
+            'disc_scores' => array(
+                'D' => array('normalized' => round($norm_d, 2), 'percent' => round($pct_d, 2)),
+                'I' => array('normalized' => round($norm_i, 2), 'percent' => round($pct_i, 2)),
+                'S' => array('normalized' => round($norm_s, 2), 'percent' => round($pct_s, 2)),
+                'C' => array('normalized' => round($norm_c, 2), 'percent' => round($pct_c, 2))
+            )
+        );
     }
 
     public function api_summary($req) {
