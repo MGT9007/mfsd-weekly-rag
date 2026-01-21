@@ -1,15 +1,15 @@
 <?php
 /**
- * Plugin Name: MFSD Weekly RAG + MBTI
- * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.7.8
+ * Plugin Name: MFSD Weekly RAG + MBTI + DISC
+ * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
+ * Version: 0.8.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.7.8';
+    const VERSION = '0.8.0';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -1010,6 +1010,8 @@ private function calculate_disc_results($user_id, $week) {
                     'total_score' => (int)$cached['total_score']
                 ),
                 'mbti' => $cached['mbti_type'],
+                'disc_type' => isset($cached['disc_type']) ? $cached['disc_type'] : null,
+                'disc_scores' => null, // Not stored in cache, would need to recalculate
                 'ai'   => $cached['ai_summary'],
                 'previous_weeks' => $previous_weeks,
                 'cached' => true
@@ -1051,7 +1053,19 @@ private function calculate_disc_results($user_id, $week) {
                 'details'  => wp_json_encode($letters),
             ), array('%d', '%d', '%s', '%s'));
         }
-
+        
+        // Calculate DISC if needed
+        $disc_type = null;
+        $disc_scores = null;
+        $expected_disc = $this->get_expected_disc_count($week);
+        if ($expected_disc > 0) {
+            $disc_result = $this->calculate_disc_results($user_id, $week);
+            if ($disc_result) {
+                $disc_type = $disc_result['disc_type'];
+                $disc_scores = $disc_result['disc_scores'];
+            }
+        }
+               
         // Get previous weeks' data for comparison
         $previous_weeks = array();
         if ($week > 1) {
@@ -1103,7 +1117,11 @@ private function calculate_disc_results($user_id, $week) {
                 $aiPrompt = "You are a supportive coach speaking to $username (aged 12-14) about their High Performance Pathway progress.\n\n";
                 $aiPrompt .= "===WEEK $week RESULTS===\n";
                 $aiPrompt .= "RAG Assessment: {$agg['reds']} Reds, {$agg['ambers']} Ambers, {$agg['greens']} Greens (Total Score: {$agg['total_score']})\n";
-                $aiPrompt .= "MBTI Personality Type: " . ($type ?: 'undetermined') . "\n\n";
+                $aiPrompt .= "MBTI Personality Type: " . ($type ?: 'undetermined') . "\n";
+                if ($disc_type) {
+                    $aiPrompt .= "DISC Personality Style: $disc_type\n";
+                }
+                $aiPrompt .= "\n";
                 
                 // Add previous weeks comparison
                 if (!empty($previous_weeks)) {
@@ -1162,17 +1180,20 @@ private function calculate_disc_results($user_id, $week) {
                 'greens' => (int)$agg['greens'],
                 'total_score' => (int)$agg['total_score'],
                 'mbti_type' => $type,
+                'disc_type' => $disc_type,
                 'ai_summary' => $aiIntro
-            ), array('%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s'));
+            ), array('%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s'));
             
             error_log("MFSD RAG: Saved summary to cache for week $week, user $user_id");
         }
 
-        return new WP_REST_Response(array(
+       return new WP_REST_Response(array(
             'ok'   => true,
             'week' => $week,
             'rag'  => $agg,
             'mbti' => $type,
+            'disc_type' => $disc_type,
+            'disc_scores' => $disc_scores,
             'ai'   => $aiIntro,
             'previous_weeks' => $previous_weeks,
             'cached' => false
