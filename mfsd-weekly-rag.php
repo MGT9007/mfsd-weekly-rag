@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.7.2
+ * Version: 0.7.3
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.7.2';
+    const VERSION = '0.7.3';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -483,6 +483,30 @@ final class MFSD_Weekly_RAG {
         ));
     }
 
+    private function get_disc_answer_count($user_id, $week) {
+        global $wpdb;
+        $disc = $wpdb->prefix . self::TBL_ANSWERS_DISC;
+        return (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $disc WHERE user_id=%d AND week_num=%d",
+            $user_id, $week
+        ));
+    }
+
+    private function get_expected_disc_count($week) {
+        global $wpdb;
+        $q = $wpdb->prefix . self::TBL_QUESTIONS;
+        $wkcol = 'w' . $week;
+        
+        return (int)$wpdb->get_var(
+            "SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='DISC'"
+        );
+    }
+
+    private function get_total_answer_count($user_id, $week) {
+        return $this->get_rag_answer_count($user_id, $week) + 
+               $this->get_mbti_answer_count($user_id, $week) +
+               $this->get_disc_answer_count($user_id, $week);
+    }
     private function get_total_answer_count($user_id, $week) {
         return $this->get_rag_answer_count($user_id, $week) + 
                $this->get_mbti_answer_count($user_id, $week);
