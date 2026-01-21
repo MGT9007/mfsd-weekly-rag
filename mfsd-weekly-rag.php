@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.7.3
+ * Version: 0.7.4
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.7.3';
+    const VERSION = '0.7.4';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -500,12 +500,6 @@ final class MFSD_Weekly_RAG {
         return (int)$wpdb->get_var(
             "SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='DISC'"
         );
-    }
-
-    private function get_total_answer_count($user_id, $week) {
-        return $this->get_rag_answer_count($user_id, $week) + 
-               $this->get_mbti_answer_count($user_id, $week) +
-               $this->get_disc_answer_count($user_id, $week);
     }
     private function get_total_answer_count($user_id, $week) {
         return $this->get_rag_answer_count($user_id, $week) + 
