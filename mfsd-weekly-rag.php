@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI
  * Description: Weekly RAG (26) + MBTI (12) survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.7.6
+ * Version: 0.7.7
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.7.6';
+    const VERSION = '0.7.7';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -772,7 +772,7 @@ final class MFSD_Weekly_RAG {
                 'created_at'  => current_time('mysql'),
             ), array('%d', '%d', '%d', '%s', '%d', '%s'));
 
-        } else {
+        } elseif ($question['q_type'] === 'MBTI') {
             $mbti_data = $this->mbti_letter_for($question_id, $answer);
             $axis = $mbti_data[0];
             $letter = $mbti_data[1];
@@ -787,6 +787,39 @@ final class MFSD_Weekly_RAG {
                 'letter'      => $letter,
                 'created_at'  => current_time('mysql'),
             ), array('%d', '%d', '%d', '%s', '%s', '%s', '%s'));
+            
+        } elseif ($question['q_type'] === 'DISC') {
+            // DISC uses numeric answer (1-5 scale from frontend)
+            $disc_answer = (int) $request->get_param('disc_answer');
+            if ($disc_answer < 1 || $disc_answer > 5) {
+                return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid DISC answer'), 400);
+            }
+            
+            // Get disc_mapping from question
+            $mapping = json_decode($question['disc_mapping'], true);
+            if (!$mapping) {
+                return new WP_REST_Response(array('ok' => false, 'error' => 'DISC mapping missing'), 400);
+            }
+            
+            // Calculate contributions (answer 1-5, minus 3 = -2 to +2)
+            $contribution = $disc_answer - 3;
+            $d_contrib = $mapping['D'] * $contribution;
+            $i_contrib = $mapping['I'] * $contribution;
+            $s_contrib = $mapping['S'] * $contribution;
+            $c_contrib = $mapping['C'] * $contribution;
+            
+            $table_disc = $wpdb->prefix . self::TBL_ANSWERS_DISC;
+            $inserted = $wpdb->insert($table_disc, array(
+                'user_id'         => $user_id,
+                'week_num'        => $week_num,
+                'question_id'     => $question_id,
+                'answer'          => $disc_answer,
+                'd_contribution'  => $d_contrib,
+                'i_contribution'  => $i_contrib,
+                's_contribution'  => $s_contrib,
+                'c_contribution'  => $c_contrib,
+                'created_at'      => current_time('mysql'),
+            ), array('%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s'));
         }
 
         if (false === $inserted) {
