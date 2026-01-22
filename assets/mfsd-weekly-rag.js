@@ -232,6 +232,136 @@
     card.appendChild(pos);
     card.appendChild(text);
 
+    // Check if this is a DISC question
+    if (q.q_type === 'DISC') {
+        // DISC uses 1-5 Likert scale
+        const scaleContainer = el("div", "disc-scale-container");
+        scaleContainer.style.cssText = "margin: 20px 0;";
+        
+        const scaleLabel = el("div", "disc-scale-label");
+        scaleLabel.style.cssText = "text-align: center; margin-bottom: 12px; font-weight: 600; color: #555;";
+        scaleLabel.textContent = "How much do you agree with this statement?";
+        scaleContainer.appendChild(scaleLabel);
+        
+        const lights = el("div", "rag-lights");
+        lights.style.cssText = "display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;";
+        
+        const options = [
+            { label: "Completely Disagree", value: 1, color: "#d9534f", emoji: "👎" },
+            { label: "Somewhat Disagree", value: 2, color: "#f0ad4e", emoji: "🤔" },
+            { label: "Neutral", value: 3, color: "#9e9e9e", emoji: "😐" },
+            { label: "Somewhat Agree", value: 4, color: "#5cb85c", emoji: "👍" },
+            { label: "Completely Agree", value: 5, color: "#4caf50", emoji: "💯" }
+        ];
+        
+        options.forEach(opt => {
+            const btn = el("button", "rag-light disc-scale-btn");
+            btn.style.cssText = `
+                background: ${opt.color};
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 16px 12px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 13px;
+                min-width: 90px;
+                transition: all 0.2s;
+                white-space: pre-line;
+                text-align: center;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+            `;
+            
+            const emoji = el("span", "");
+            emoji.style.cssText = "font-size: 24px;";
+            emoji.textContent = opt.emoji;
+            btn.appendChild(emoji);
+            
+            const label = el("span", "");
+            label.style.cssText = "font-size: 12px; line-height: 1.3;";
+            label.textContent = opt.label;
+            btn.appendChild(label);
+            
+            btn.onmouseover = () => {
+                btn.style.transform = "translateY(-3px)";
+                btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
+            };
+            btn.onmouseout = () => {
+                btn.style.transform = "translateY(0)";
+                btn.style.boxShadow = "none";
+            };
+            
+            // THIS IS THE KEY PART - sends disc_answer parameter
+            btn.onclick = async () => {
+                showLoading('Saving your answer...');
+                
+                try {
+                    const mapping = q.disc_mapping;
+                    const contribution = opt.value - 3;
+                    
+                    const payload = {
+                        week: week,
+                        question_id: q.id,
+                        q_type: 'DISC',
+                        disc_answer: opt.value,  // Send as disc_answer
+                        d_contribution: mapping.D * contribution,
+                        i_contribution: mapping.I * contribution,
+                        s_contribution: mapping.S * contribution,
+                        c_contribution: mapping.C * contribution
+                    };
+                    
+                    const res = await fetch(cfg.restUrlAnswer, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-WP-Nonce': cfg.nonce || ''
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!res.ok) throw new Error('Failed to save answer');
+                    
+                    const data = await res.json();
+                    if (!data.ok) throw new Error(data.error || 'Failed');
+                    
+                    hideLoading();
+                    
+                    // Move to next question
+                    idx++;
+                    if (idx < questions.length) {
+                        await renderQuestion();
+                    } else {
+                        await renderSummary();
+                    }
+                    
+                } catch (err) {
+                    hideLoading();
+                    console.error('Error saving DISC answer:', err);
+                    alert('Error saving answer: ' + err.message);
+                }
+            };
+            
+            lights.appendChild(btn);
+        });
+        
+        scaleContainer.appendChild(lights);
+        card.appendChild(scaleContainer);
+        
+        wrap.appendChild(card);
+        root.replaceChildren(wrap);
+        
+        hideLoading(); // If you have this
+        return; // EXIT HERE - don't render RAG buttons
+    }
+    
+    // ============ END DISC CHECK ============
+
+    const lights = el("div", "rag-lights");
+
     // Show previous weeks' answers for weeks 2-6 (for both RAG and MBTI)
     if (week > 1) {
       try {
