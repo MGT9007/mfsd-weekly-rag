@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 0.8.2
+ * Version: 1.8.3
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '0.8.2';
+    const VERSION = '1.8.3';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -698,38 +698,47 @@ final class MFSD_Weekly_RAG {
             return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
         }
 
-        $all_weeks = array();
-        $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-        $mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
+   $all_weeks = array();
+$a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+$mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
+$ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
 
-        for ($w = 1; $w <= 6; $w++) {
-            // Get RAG stats for this week
-            $rag_stats = $wpdb->get_row($wpdb->prepare("
-                SELECT
-                    SUM(answer='R') AS reds,
-                    SUM(answer='A') AS ambers,
-                    SUM(answer='G') AS greens,
-                    SUM(score) AS total_score
-                FROM $a WHERE user_id=%d AND week_num=%d
-            ", $user_id, $w), ARRAY_A);
+for ($w = 1; $w <= 6; $w++) {
+    // Check if week summary exists (only created when all questions answered)
+    $summary_exists = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM $ws WHERE user_id=%d AND week_num=%d",
+        $user_id, $w
+    ));
+    
+    $is_completed = ($summary_exists > 0);
+    
+    if ($is_completed) {
+        // Get RAG stats for this week
+        $rag_stats = $wpdb->get_row($wpdb->prepare("
+            SELECT
+                SUM(answer='R') AS reds,
+                SUM(answer='A') AS ambers,
+                SUM(answer='G') AS greens,
+                SUM(score) AS total_score
+            FROM $a WHERE user_id=%d AND week_num=%d
+        ", $user_id, $w), ARRAY_A);
 
-            // Get MBTI type for this week
-            $mbti = $wpdb->get_var($wpdb->prepare(
-                "SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",
-                $user_id, $w
-            ));
+        // Get MBTI type for this week
+        $mbti = $wpdb->get_var($wpdb->prepare(
+            "SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",
+            $user_id, $w
+        ));
 
-            if ($rag_stats && ($rag_stats['reds'] > 0 || $rag_stats['ambers'] > 0 || $rag_stats['greens'] > 0)) {
-                $all_weeks[$w] = array(
-                    'week' => $w,
-                    'rag' => $rag_stats,
-                    'mbti' => $mbti ? $mbti : null,
-                    'completed' => true
-                );
-            } else {
-                $all_weeks[$w] = array(
-                    'week' => $w,
-                    'completed' => false
+        $all_weeks[$w] = array(
+            'week' => $w,
+            'rag' => $rag_stats,
+            'mbti' => $mbti ? $mbti : null,
+            'completed' => true
+        );
+    } else {
+        $all_weeks[$w] = array(
+            'week' => $w,
+            'completed' => false
                 );
             }
         }
