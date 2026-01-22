@@ -360,8 +360,6 @@
     
     // ============ END DISC CHECK ============
 
-    const lights = el("div", "rag-lights");
-
     // Show previous weeks' answers for weeks 2-6 (for both RAG and MBTI)
     if (week > 1) {
       try {
