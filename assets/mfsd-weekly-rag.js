@@ -296,7 +296,7 @@
             
             // THIS IS THE KEY PART - sends disc_answer parameter
             btn.onclick = async () => {
-                showLoading('Saving your answer...');
+                showQuestionLoading('Saving your answer...');
                 
                 try {
                     const mapping = q.disc_mapping;
@@ -328,7 +328,7 @@
                     const data = await res.json();
                     if (!data.ok) throw new Error(data.error || 'Failed');
                     
-                    hideLoading();
+                    hideQuestionLoading();
                     
                     // Move to next question
                     idx++;
@@ -339,7 +339,7 @@
                     }
                     
                 } catch (err) {
-                    hideLoading();
+                    hideQuestionLoading();
                     console.error('Error saving DISC answer:', err);
                     alert('Error saving answer: ' + err.message);
                 }
@@ -354,7 +354,7 @@
         wrap.appendChild(card);
         root.replaceChildren(wrap);
         
-        hideLoading(); // If you have this
+        hideQuestionLoading(); // If you have this
         return; // EXIT HERE - don't render RAG buttons
     }
     
