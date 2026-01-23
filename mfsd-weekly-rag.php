@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 1.8.5
+ * Version: 1.8.6
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '1.8.5';
+    const VERSION = '1.8.6';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -752,8 +752,8 @@ for ($w = 1; $w <= 6; $w++) {
         $question_id = (int) $request->get_param('question_id');
         $answer = strtoupper(sanitize_text_field($request->get_param('rag')));
 
-        if (!$week_num || !$question_id || !in_array($answer, array('R', 'A', 'G'))) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid data'), 400);
+        if (!$week_num || !$question_id) {
+        return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid data'), 400);
         }
 
         global $wpdb;
@@ -765,7 +765,13 @@ for ($w = 1; $w <= 6; $w++) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
         }
 
-        if ($question['q_type'] === 'RAG') {
+         if ($question['q_type'] === 'RAG') {
+           // RAG-specific validation
+            $answer = strtoupper(sanitize_text_field($request->get_param('rag')));
+             if (!in_array($answer, array('R', 'A', 'G'))) {
+                return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid RAG answer'), 400);
+            }
+                
             $score = 0;
             if ($answer === 'R') $score = (int) $question['red_score'];
             elseif ($answer === 'A') $score = (int) $question['amber_score'];
@@ -782,6 +788,10 @@ for ($w = 1; $w <= 6; $w++) {
             ), array('%d', '%d', '%d', '%s', '%d', '%s'));
 
         } elseif ($question['q_type'] === 'MBTI') {
+            $answer = strtoupper(sanitize_text_field($request->get_param('rag')));
+            if (!in_array($answer, array('R', 'A', 'G'))) {
+                return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid MBTI answer'), 400);
+            }
             $mbti_data = $this->mbti_letter_for($question_id, $answer);
             $axis = $mbti_data[0];
             $letter = $mbti_data[1];
