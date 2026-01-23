@@ -299,7 +299,28 @@
                 showQuestionLoading('Saving your answer...');
                 
                 try {
-                    const mapping = q.disc_mapping;
+                    
+                    // Parse disc_mapping if it's a JSON string
+                    let mapping = q.disc_mapping;
+                  if (typeof mapping === 'string') {
+                   try {
+                       mapping = JSON.parse(mapping);
+                       } catch (e) {
+                          hideQuestionLoading();
+                          alert('Error: Invalid DISC question data.');
+                          console.error('Failed to parse disc_mapping:', mapping);
+                          return;
+                        }
+                    }
+                    
+                    // Verify mapping has required properties
+                    if (!mapping || !mapping.hasOwnProperty('D')) {
+                        hideQuestionLoading();
+                        alert('Error: DISC question missing mapping data.');
+                        console.error('Invalid mapping:', mapping);
+                        return;
+                    }
+
                     const contribution = opt.value - 3;
                     
                     const payload = {
