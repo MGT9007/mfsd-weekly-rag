@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 1.8.7
+ * Version: 1.8.8
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '1.8.7';
+    const VERSION = '1.8.8';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -1084,7 +1084,19 @@ private function calculate_disc_results($user_id, $week) {
                 $disc_scores = $disc_result['disc_scores'];
             }
         }
-               
+       
+        // Get MBTI from this week OR previous weeks
+        $mbti_type_to_use = $type;  // Start with current week's MBTI
+        if (!$mbti_type_to_use && !empty($previous_weeks)) {
+            // Find most recent MBTI from previous weeks
+            foreach (array_reverse($previous_weeks) as $pw) {
+                if (!empty($pw['mbti'])) {
+                    $mbti_type_to_use = $pw['mbti'];
+                    break;
+                }
+            }
+        }
+
         // Get previous weeks' data for comparison
         $previous_weeks = array();
         if ($week > 1) {
@@ -1134,54 +1146,106 @@ private function calculate_disc_results($user_id, $week) {
                 $username = um_get_display_name($user_id);
                 
                 $aiPrompt = "You are a supportive coach speaking to $username (aged 12-14) about their High Performance Pathway progress.\n\n";
-                $aiPrompt .= "===WEEK $week RESULTS===\n";
-                $aiPrompt .= "RAG Assessment: {$agg['reds']} Reds, {$agg['ambers']} Ambers, {$agg['greens']} Greens (Total Score: {$agg['total_score']})\n";
-                $aiPrompt .= "MBTI Personality Type: " . ($type ?: 'undetermined') . "\n";
-                if ($disc_type) {
-                    $aiPrompt .= "DISC Personality Style: $disc_type\n";
-                }
-                $aiPrompt .= "\n";
-                
-                // Add previous weeks comparison
-                if (!empty($previous_weeks)) {
-                    $aiPrompt .= "===PROGRESS OVER TIME===\n";
-                    foreach ($previous_weeks as $pw) {
-                        $aiPrompt .= "Week {$pw['week']}: {$pw['rag']['reds']}R / {$pw['rag']['ambers']}A / {$pw['rag']['greens']}G (Score: {$pw['rag']['total_score']})";
-                        if ($pw['mbti']) {
-                            $aiPrompt .= " | MBTI: {$pw['mbti']}";
-                        }
-                        $aiPrompt .= "\n";
-                    }
-                    $aiPrompt .= "\n";
-                }
-                
-                // Add career information
-                if (!empty($dream_jobs_ranking) && is_array($dream_jobs_ranking)) {
-                    $aiPrompt .= "Their Dream Jobs (ranked):\n";
-                    foreach (array_slice($dream_jobs_ranking, 0, 5) as $i => $job) {
-                        $aiPrompt .= ($i + 1) . ". $job\n";
-                    }
-                    $aiPrompt .= "\n";
-                }
-                
-                $aiPrompt .= "===YOUR TASK===\n";
-                $aiPrompt .= "Write a warm, insightful summary that:\n";
-                $aiPrompt .= "1. Celebrates their strengths (Greens) specifically\n";
-                if (!empty($previous_weeks)) {
-                    $aiPrompt .= "2. Highlights progress or trends compared to previous weeks\n";
-                    $aiPrompt .= "3. Addresses any consistency or changes in MBTI type\n";
-                } else {
-                    $aiPrompt .= "2. Explains their MBTI type (" . ($type ?: 'undetermined') . ") and key strengths\n";
-                }
-                $aiPrompt .= "4. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
-                if (!empty($dream_jobs_ranking)) {
-                    $aiPrompt .= "5. Connects their personality and results to their dream jobs\n";
-                }
-                $aiPrompt .= "6. Provides 2-3 specific, actionable next steps for this week\n\n";
-                
-                $aiPrompt .= "CRITICAL: Address them directly using 'you' and 'your'. Be encouraging, specific, and practical.\n";
-                $aiPrompt .= "Use UK context. Keep to 4-5 paragraphs max. Use Steve's Solutions Mindset principles.";
-                
+$aiPrompt .= "===WEEK $week RESULTS===\n";
+$aiPrompt .= "RAG Assessment: {$agg['reds']} Reds, {$agg['ambers']} Ambers, {$agg['greens']} Greens (Total Score: {$agg['total_score']})\n";
+
+// Include MBTI (current or from previous weeks)
+if ($mbti_type_to_use) {
+    if ($type) {
+        $aiPrompt .= "MBTI Personality Type: $mbti_type_to_use (assessed this week)\n";
+    } else {
+        $aiPrompt .= "MBTI Personality Type: $mbti_type_to_use (from previous weeks)\n";
+    }
+}
+
+// Include DISC prominently if available
+if ($disc_type) {
+    $aiPrompt .= "DISC Personality Style: $disc_type (assessed this week)\n";
+    $aiPrompt .= "DISC Breakdown: D={$disc_scores['D']['percent']}%, I={$disc_scores['I']['percent']}%, S={$disc_scores['S']['percent']}%, C={$disc_scores['C']['percent']}%\n";
+}
+
+$aiPrompt .= "\n";
+
+// Add previous weeks comparison
+if (!empty($previous_weeks)) {
+    $aiPrompt .= "===PROGRESS OVER TIME===\n";
+    foreach ($previous_weeks as $pw) {
+        $aiPrompt .= "Week {$pw['week']}: {$pw['rag']['reds']}R / {$pw['rag']['ambers']}A / {$pw['rag']['greens']}G (Score: {$pw['rag']['total_score']})";
+        if ($pw['mbti']) {
+            $aiPrompt .= " | MBTI: {$pw['mbti']}";
+        }
+        $aiPrompt .= "\n";
+    }
+    $aiPrompt .= "\n";
+}
+
+// Add career information
+if (!empty($dream_jobs_ranking) && is_array($dream_jobs_ranking)) {
+    $aiPrompt .= "Their Dream Jobs (ranked):\n";
+    foreach (array_slice($dream_jobs_ranking, 0, 5) as $i => $job) {
+        $aiPrompt .= ($i + 1) . ". $job\n";
+    }
+    $aiPrompt .= "\n";
+}
+
+$aiPrompt .= "===YOUR TASK===\n";
+$aiPrompt .= "Write a warm, insightful summary that:\n";
+$aiPrompt .= "1. Celebrates their strengths (Greens) specifically\n";
+
+if (!empty($previous_weeks)) {
+    $aiPrompt .= "2. Highlights progress or trends compared to previous weeks\n";
+} else {
+    $aiPrompt .= "2. Focuses on this week's results and what they show\n";
+}
+
+// Personality assessment instructions
+if ($disc_type && $mbti_type_to_use) {
+    // Both DISC and MBTI available - compare them
+    $aiPrompt .= "3. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for how they work and communicate?\n";
+    $aiPrompt .= "4. Compare DISC ($disc_type) to MBTI ($mbti_type_to_use) - how do these personality insights work together?\n";
+    $aiPrompt .= "5. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    if (!empty($dream_jobs_ranking)) {
+        $aiPrompt .= "6. Connects their DISC style and MBTI type to their dream jobs\n";
+    }
+    $aiPrompt .= "7. Provides 2-3 specific, actionable next steps for this week\n\n";
+} elseif ($disc_type) {
+    // Only DISC available
+    $aiPrompt .= "3. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for their strengths and how they work?\n";
+    $aiPrompt .= "4. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    if (!empty($dream_jobs_ranking)) {
+        $aiPrompt .= "5. Connects their DISC style to their dream jobs\n";
+    }
+    $aiPrompt .= "6. Provides 2-3 specific, actionable next steps for this week\n\n";
+} elseif ($mbti_type_to_use) {
+    // Only MBTI available
+    if ($type) {
+        $aiPrompt .= "3. Explains their MBTI type ($mbti_type_to_use) and key strengths\n";
+    } else {
+        $aiPrompt .= "3. References their MBTI type ($mbti_type_to_use) from previous weeks\n";
+    }
+    $aiPrompt .= "4. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    if (!empty($dream_jobs_ranking)) {
+        $aiPrompt .= "5. Connects their personality to their dream jobs\n";
+    }
+    $aiPrompt .= "6. Provides 2-3 specific, actionable next steps for this week\n\n";
+} else {
+    // No personality assessments
+    $aiPrompt .= "3. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    if (!empty($dream_jobs_ranking)) {
+        $aiPrompt .= "4. Connects their results to their dream jobs\n";
+    }
+    $aiPrompt .= "5. Provides 2-3 specific, actionable next steps for this week\n\n";
+}
+
+$aiPrompt .= "CRITICAL: Address them directly using 'you' and 'your'. Be encouraging, specific, and practical.\n";
+$aiPrompt .= "Use UK context. Keep to 4-5 paragraphs max. Use bullet points to help annotate points through the summary..\n";
+$aiPrompt .= "Use Steve's Solutions Mindset principles to help empasise a growth mindset and positive attitude throughout the summary.\n";
+$aiPrompt .= "The principles are: 1.Say to yourself What is the solution to every problem I face?, 2.If you have a solutions mindset marginal gains will occur, \n";
+$aiPrompt .= "3.There is no Failure only Feedback, 4.A smooth sea, never made a skilled sailor, 5.• If one person can do it, anyone can do it, \n";
+$aiPrompt .= "6.Happiness is a journey, not an outcome, 7.You never lose…you either win or learn, 8.Character over Calibre is the best way to succeed, \n";
+$aiPrompt .= "9.The person with the most passion has the greatest impact, 10.Hard work beats talent, when talent does not work hard,\n";
+$aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog thinks you are, 13.It is nice to be important, but more important to be nice. \n";
+
                 $aiIntro = $mwai->simpleTextQuery($aiPrompt);
             } catch (Exception $e) { 
                 error_log('MFSD RAG: AI summary generation error: ' . $e->getMessage());
