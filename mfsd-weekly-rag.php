@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 1.8.8
+ * Version: 1.9.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '1.8.8';
+    const VERSION = '1.9.0';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -986,6 +986,7 @@ private function calculate_disc_results($user_id, $week) {
             $user_id, $week
         ), ARRAY_A);
 
+/* TEMPORARILY DISABLED FOR PROMPT TUNING 
         if ($cached && !empty($cached['ai_summary'])) {
             // Return cached summary
             error_log("MFSD RAG: Returning cached summary for week $week, user $user_id");
@@ -1036,7 +1037,7 @@ private function calculate_disc_results($user_id, $week) {
                 'cached' => true
             ), 200);
         }
-
+        END TEMPORARILY DISABLED */
         error_log("MFSD RAG: Generating new summary for week $week, user $user_id");
 
         // Generate summary (existing code)
@@ -1195,50 +1196,51 @@ $aiPrompt .= "1. Celebrates their strengths (Greens) specifically\n";
 if (!empty($previous_weeks)) {
     $aiPrompt .= "2. Highlights progress or trends compared to previous weeks\n";
 } else {
-    $aiPrompt .= "2. Focuses on this week's results and what they show\n";
+    $aiPrompt .= "3. Focuses on this week's results and what they show\n";
 }
 
 // Personality assessment instructions
 if ($disc_type && $mbti_type_to_use) {
     // Both DISC and MBTI available - compare them
-    $aiPrompt .= "3. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for how they work and communicate?\n";
-    $aiPrompt .= "4. Compare DISC ($disc_type) to MBTI ($mbti_type_to_use) - how do these personality insights work together?\n";
-    $aiPrompt .= "5. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    $aiPrompt .= "4. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for how they work and communicate?\n";
+    $aiPrompt .= "5. Compare DISC ($disc_type) to MBTI ($mbti_type_to_use) - how do these personality insights work together?\n";
+    $aiPrompt .= "6. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
     if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "6. Connects their DISC style and MBTI type to their dream jobs\n";
+        $aiPrompt .= "7. Connects their DISC style and MBTI type to their dream jobs\n";
     }
-    $aiPrompt .= "7. Provides 2-3 specific, actionable next steps for this week\n\n";
+    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
 } elseif ($disc_type) {
     // Only DISC available
-    $aiPrompt .= "3. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for their strengths and how they work?\n";
-    $aiPrompt .= "4. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    $aiPrompt .= "7. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for their strengths and how they work?\n";
+    $aiPrompt .= "8. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
     if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "5. Connects their DISC style to their dream jobs\n";
+        $aiPrompt .= "7. Connects their DISC style to their dream jobs\n";
     }
-    $aiPrompt .= "6. Provides 2-3 specific, actionable next steps for this week\n\n";
+    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
 } elseif ($mbti_type_to_use) {
     // Only MBTI available
     if ($type) {
-        $aiPrompt .= "3. Explains their MBTI type ($mbti_type_to_use) and key strengths\n";
+        $aiPrompt .= "7. Explains their MBTI type ($mbti_type_to_use) and key strengths\n";
     } else {
-        $aiPrompt .= "3. References their MBTI type ($mbti_type_to_use) from previous weeks\n";
+        $aiPrompt .= "7. References their MBTI type ($mbti_type_to_use) from previous weeks\n";
     }
-    $aiPrompt .= "4. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
+    $aiPrompt .= "8. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
     if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "5. Connects their personality to their dream jobs\n";
+        $aiPrompt .= "7. Connects their personality to their dream jobs\n";
     }
-    $aiPrompt .= "6. Provides 2-3 specific, actionable next steps for this week\n\n";
+    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
 } else {
     // No personality assessments
     $aiPrompt .= "3. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
     if (!empty($dream_jobs_ranking)) {
         $aiPrompt .= "4. Connects their results to their dream jobs\n";
     }
-    $aiPrompt .= "5. Provides 2-3 specific, actionable next steps for this week\n\n";
+    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
 }
 
 $aiPrompt .= "CRITICAL: Address them directly using 'you' and 'your'. Be encouraging, specific, and practical.\n";
-$aiPrompt .= "Use UK context. Keep to 4-5 paragraphs max. Use bullet points to help annotate points through the summary..\n";
+//$aiPrompt .= "Use UK context. Keep to 4-5 paragraphs max. Use bullet points to help annotate points through the summary..\n";
+$aiPrompt .= "Use UK context. Use bullet points to help annotate points through the summary..\n";
 $aiPrompt .= "Use Steve's Solutions Mindset principles to help empasise a growth mindset and positive attitude throughout the summary.\n";
 $aiPrompt .= "The principles are: 1.Say to yourself What is the solution to every problem I face?, 2.If you have a solutions mindset marginal gains will occur, \n";
 $aiPrompt .= "3.There is no Failure only Feedback, 4.A smooth sea, never made a skilled sailor, 5.• If one person can do it, anyone can do it, \n";
