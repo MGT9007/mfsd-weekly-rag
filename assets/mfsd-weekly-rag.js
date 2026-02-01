@@ -1121,32 +1121,77 @@ const DISC_DESCRIPTIONS = {
  * @param {string} primaryStyle - Primary DISC style (e.g., "D", "DI")
  * @returns {HTMLCanvasElement} - Canvas element with the plot
  */
-function createDISCPolarPlot(scores, primaryStyle) {
+function createDISCPolarPlot(scores) {
   const canvas = document.createElement('canvas');
-  canvas.width = 400;
-  canvas.height = 400;
+  canvas.width = 500;
+  canvas.height = 500;
   canvas.id = 'disc-polar-plot';
   
   const ctx = canvas.getContext('2d');
-  const centerX = 200;
-  const centerY = 200;
-  const maxRadius = 160;
+  const centerX = 250;
+  const centerY = 250;
+  const maxRadius = 180;
   
   // Background
-  ctx.fillStyle = '#f0f2f6';
-  ctx.fillRect(0, 0, 400, 400);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 500, 500);
   
-  // Draw concentric circles (grid)
-  ctx.strokeStyle = '#d0d0d0';
+  // DISC segment colors (matching reference image)
+  const colors = {
+    'D': '#2d5f8d',  // Blue (Dominant)
+    'I': '#f9b234',  // Yellow (Influential)
+    'S': '#c67a3c',  // Orange (Steady)
+    'C': '#3b5998'   // Dark blue (Compliant)
+  };
+  
+  // Segment labels with positions and characteristics
+  const segments = [
+    { 
+      key: 'D', 
+      startAngle: 0, 
+      endAngle: Math.PI / 2,
+      label: 'Dominant',
+      traits: ['Direct', 'Decisive', 'Doer'],
+      labelPos: { x: centerX + 140, y: centerY - 140 }
+    },
+    { 
+      key: 'I', 
+      startAngle: Math.PI / 2, 
+      endAngle: Math.PI,
+      label: 'Influential',
+      traits: ['Inspirational', 'Interactive', 'Interesting'],
+      labelPos: { x: centerX - 140, y: centerY - 140 }
+    },
+    { 
+      key: 'S', 
+      startAngle: Math.PI, 
+      endAngle: 3 * Math.PI / 2,
+      label: 'Steady',
+      traits: ['Stable', 'Supportive', 'Sincere'],
+      labelPos: { x: centerX - 140, y: centerY + 140 }
+    },
+    { 
+      key: 'C', 
+      startAngle: 3 * Math.PI / 2, 
+      endAngle: 2 * Math.PI,
+      label: 'Compliant',
+      traits: ['Cautious', 'Careful', 'Conscientious'],
+      labelPos: { x: centerX + 140, y: centerY + 140 }
+    }
+  ];
+  
+  // Draw concentric circles (grid) - 4 levels for 25%, 50%, 75%, 100%
+  ctx.strokeStyle = '#e0e0e0';
   ctx.lineWidth = 1;
-  for (let r = 40; r <= maxRadius; r += 40) {
+  for (let i = 1; i <= 4; i++) {
+    const r = (maxRadius / 4) * i;
     ctx.beginPath();
     ctx.arc(centerX, centerY, r, 0, 2 * Math.PI);
     ctx.stroke();
   }
   
-  // Draw axes
-  ctx.strokeStyle = '#a0a0a0';
+  // Draw cross axes
+  ctx.strokeStyle = '#c0c0c0';
   ctx.lineWidth = 2;
   ctx.setLineDash([5, 5]);
   
@@ -1164,107 +1209,87 @@ function createDISCPolarPlot(scores, primaryStyle) {
   
   ctx.setLineDash([]);
   
-  // Define angles for each dimension (in radians)
-  const angles = {
-    'D': 7 * Math.PI / 4,  // 315° (upper right)
-    'I': Math.PI / 4,      // 45° (upper left)
-    'S': 3 * Math.PI / 4,  // 135° (lower left)
-    'C': 5 * Math.PI / 4   // 225° (lower right)
-  };
-  
-  // Draw labels
-  ctx.font = 'bold 20px Arial';
-  ctx.fillStyle = '#333';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  
-  const labelRadius = maxRadius + 25;
-  
-  ctx.fillText('D', centerX + labelRadius * Math.cos(angles['D']), 
-                    centerY - labelRadius * Math.sin(angles['D']));
-  ctx.fillText('I', centerX + labelRadius * Math.cos(angles['I']), 
-                    centerY - labelRadius * Math.sin(angles['I']));
-  ctx.fillText('S', centerX + labelRadius * Math.cos(angles['S']), 
-                    centerY - labelRadius * Math.sin(angles['S']));
-  ctx.fillText('C', centerX + labelRadius * Math.cos(angles['C']), 
-                    centerY - labelRadius * Math.sin(angles['C']));
-  
-  // Calculate vector components
-  const scaled = {
-    'D': scores.D / 100,
-    'I': scores.I / 100,
-    'S': scores.S / 100,
-    'C': scores.C / 100
-  };
-  
-  let totalX = 0;
-  let totalY = 0;
-  
-  for (const [dim, score] of Object.entries(scaled)) {
-    const angle = angles[dim];
-    totalX += score * Math.cos(angle);
-    totalY += score * Math.sin(angle);
-  }
-  
-  // Calculate resultant
-  const magnitude = Math.sqrt(totalX * totalX + totalY * totalY);
-  const resultantAngle = Math.atan2(totalY, totalX);
-  
-  // Draw individual dimension vectors (faint)
-  ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
-  ctx.lineWidth = 2;
-  
-  for (const [dim, score] of Object.entries(scaled)) {
-    const angle = angles[dim];
-    const endX = centerX + (score * maxRadius * Math.cos(angle));
-    const endY = centerY - (score * maxRadius * Math.sin(angle));
+  // Draw filled segments based on percentages
+  segments.forEach(seg => {
+    const percent = scores[seg.key].percent || 0;
+    const fillRadius = (percent / 100) * maxRadius;
     
+    // Draw filled segment
+    ctx.fillStyle = colors[seg.key];
+    ctx.globalAlpha = 0.6;
     ctx.beginPath();
     ctx.moveTo(centerX, centerY);
-    ctx.lineTo(endX, endY);
+    ctx.arc(centerX, centerY, fillRadius, seg.startAngle, seg.endAngle);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+    
+    // Draw segment outline
+    ctx.strokeStyle = colors[seg.key];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, maxRadius, seg.startAngle, seg.endAngle);
+    ctx.closePath();
     ctx.stroke();
-  }
+  });
   
-  // Draw resultant vector (prominent)
-  const resultX = centerX + (magnitude * maxRadius * Math.cos(resultantAngle));
-  const resultY = centerY - (magnitude * maxRadius * Math.sin(resultantAngle));
+  // Add compass labels (Active, People Focus, etc.)
+  ctx.font = 'bold 14px Arial';
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'center';
   
-  // Arrow line
-  ctx.strokeStyle = '#4CAF50';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(centerX, centerY);
-  ctx.lineTo(resultX, resultY);
-  ctx.stroke();
+  ctx.fillText('Active', centerX, centerY - maxRadius - 15);
+  ctx.fillText('Reflective', centerX, centerY + maxRadius + 25);
   
-  // Arrow head
-  const arrowSize = 12;
-  const arrowAngle = Math.PI / 6;
+  ctx.save();
+  ctx.translate(centerX - maxRadius - 25, centerY);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('People Focus', 0, 0);
+  ctx.restore();
   
-  ctx.fillStyle = '#4CAF50';
-  ctx.beginPath();
-  ctx.moveTo(resultX, resultY);
-  ctx.lineTo(
-    resultX - arrowSize * Math.cos(resultantAngle - arrowAngle),
-    resultY + arrowSize * Math.sin(resultantAngle - arrowAngle)
-  );
-  ctx.lineTo(
-    resultX - arrowSize * Math.cos(resultantAngle + arrowAngle),
-    resultY + arrowSize * Math.sin(resultantAngle + arrowAngle)
-  );
-  ctx.closePath();
-  ctx.fill();
+  ctx.save();
+  ctx.translate(centerX + maxRadius + 25, centerY);
+  ctx.rotate(Math.PI / 2);
+  ctx.fillText('Task Focus', 0, 0);
+  ctx.restore();
   
-  // Draw point at the end
-  ctx.fillStyle = '#4CAF50';
-  ctx.beginPath();
-  ctx.arc(resultX, resultY, 8, 0, 2 * Math.PI);
-  ctx.fill();
-  
-  // Add border to canvas
-  ctx.strokeStyle = '#e5e5e5';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(0, 0, 400, 400);
+  // Draw segment labels and traits
+  ctx.textAlign = 'center';
+  segments.forEach(seg => {
+    const percent = scores[seg.key].percent || 0;
+    
+    // Main letter in center of segment
+    const midAngle = (seg.startAngle + seg.endAngle) / 2;
+    const letterX = centerX + (maxRadius * 0.4) * Math.cos(midAngle);
+    const letterY = centerY + (maxRadius * 0.4) * Math.sin(midAngle);
+    
+    ctx.font = 'bold 48px Arial';
+    ctx.fillStyle = '#333';
+    ctx.fillText(seg.key, letterX, letterY);
+    
+    // Full label outside circle
+    ctx.font = 'bold 16px Arial';
+    ctx.fillStyle = '#333';
+    const labelAngle = (seg.startAngle + seg.endAngle) / 2;
+    const labelX = centerX + (maxRadius + 50) * Math.cos(labelAngle);
+    const labelY = centerY + (maxRadius + 50) * Math.sin(labelAngle);
+    ctx.fillText(seg.label, labelX, labelY);
+    
+    // Traits (smaller text)
+    ctx.font = '11px Arial';
+    ctx.fillStyle = '#666';
+    seg.traits.forEach((trait, i) => {
+      ctx.fillText(trait, labelX, labelY + 18 + (i * 14));
+    });
+    
+    // Percentage
+    ctx.font = 'bold 14px Arial';
+    ctx.fillStyle = colors[seg.key];
+    const pctX = centerX + (maxRadius * 0.65) * Math.cos(midAngle);
+    const pctY = centerY + (maxRadius * 0.65) * Math.sin(midAngle);
+    ctx.fillText(Math.round(percent) + '%', pctX, pctY);
+  });
   
   return canvas;
 }
@@ -1410,68 +1435,6 @@ function renderDISCResults(summaryData) {
   }
   
   return discCard;
-}
-
-// ============================================================================
-// EXAMPLE: How to integrate into your renderSummary() function
-// ============================================================================
-
-async function renderSummary() {
-  showLoading('Calculating your results...');
-  
-  try {
-    const res = await fetch(cfg.restUrlSummary, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-WP-Nonce': cfg.nonce || ''
-      },
-      credentials: 'same-origin',
-      body: JSON.stringify({ week: week })
-    });
-    
-    if (!res.ok) throw new Error('Failed to get summary');
-    
-    const data = await res.json();
-    hideLoading();
-    
-    if (!data.ok) throw new Error(data.error || 'Failed');
-    
-    const wrap = el("div", "rag-wrap");
-    
-    // ... existing RAG summary card code ...
-    
-    // MBTI card (if present)
-    if (data.mbti_type) {
-      // ... existing MBTI code ...
-    }
-    
-    // DISC card (if present) - ADD THIS
-    if (data.disc_type) {
-      const discCard = renderDISCResults({
-        disc_type: data.disc_type,
-        disc_scores: {
-          D: data.disc_scores.D,
-          I: data.disc_scores.I,
-          S: data.disc_scores.S,
-          C: data.disc_scores.C
-        }
-      });
-      
-      if (discCard) {
-        wrap.appendChild(discCard);
-      }
-    }
-    
-    // ... rest of your summary code ...
-    
-    root.replaceChildren(wrap);
-    
-  } catch (err) {
-    hideLoading();
-    console.error('Summary error:', err);
-    alert('Error loading summary: ' + err.message);
-  }
 }
 
 // ============================================================================
