@@ -766,10 +766,72 @@
       chartContainer.id = "chart-display";
       card.appendChild(chartContainer);
 
-      // Add MBTI and AI sections to card first
-      if (summaryData.mbti) {
-        card.appendChild(el("div","rag-mbti","MBTI Type: " + summaryData.mbti));
-      }
+      // Add DISC display with visual plot
+if (summaryData.disc_type && summaryData.disc_scores) {
+  const discSection = el("div", "rag-disc-section");
+  discSection.style.cssText = "margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;";
+  
+  const discTitle = el("div", "rag-disc-title");
+  discTitle.style.cssText = "font-size: 18px; font-weight: 600; margin-bottom: 16px; text-align: center;";
+  discTitle.textContent = "DISC Personality Style: " + summaryData.disc_type;
+  discSection.appendChild(discTitle);
+  
+  // Create container for plot and breakdown side by side
+  const discContent = el("div", "disc-content-wrapper");
+  discContent.style.cssText = "display: flex; gap: 20px; align-items: center; flex-wrap: wrap; justify-content: center;";
+  
+  // Add polar plot
+  const plotContainer = el("div", "disc-plot-wrapper");
+  plotContainer.style.cssText = "flex: 0 0 auto;";
+  const polarPlot = createDISCPolarPlot(summaryData.disc_scores);
+  if (polarPlot) {
+    plotContainer.appendChild(polarPlot);
+  }
+  discContent.appendChild(plotContainer);
+  
+  // Add score breakdown
+  const breakdown = el("div", "disc-breakdown");
+  breakdown.style.cssText = "flex: 1 1 200px; min-width: 200px;";
+  
+  Object.entries(summaryData.disc_scores).forEach(([letter, scores]) => {
+    const row = el("div", "disc-score-row");
+    row.style.cssText = "margin: 8px 0;";
+    
+    const label = el("span", "disc-score-label");
+    label.style.cssText = "display: inline-block; width: 30px; font-weight: 600;";
+    label.textContent = letter + ":";
+    
+    const bar = el("div", "disc-score-bar");
+    bar.style.cssText = `
+      display: inline-block;
+      width: ${scores.percent}%;
+      max-width: 150px;
+      height: 20px;
+      background: linear-gradient(90deg, #4a90e2, #64b5f6);
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    `;
+    
+    const pct = el("span", "disc-score-pct");
+    pct.style.cssText = "margin-left: 8px; font-weight: 600; color: #333;";
+    pct.textContent = Math.round(scores.percent) + "%";
+    
+    row.appendChild(label);
+    row.appendChild(bar);
+    row.appendChild(pct);
+    breakdown.appendChild(row);
+  });
+  
+  discContent.appendChild(breakdown);
+  discSection.appendChild(discContent);
+  
+  card.appendChild(discSection);
+}
+
+if (summaryData.ai) {
+  card.appendChild(el("div","rag-ai", summaryData.ai));
+}
       
       if (summaryData.ai) {
         card.appendChild(el("div","rag-ai", summaryData.ai));

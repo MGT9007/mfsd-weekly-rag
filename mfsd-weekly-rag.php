@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 1.9.0
+ * Version: 1.10.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '1.9.0';
+    const VERSION = '1.10.0';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
