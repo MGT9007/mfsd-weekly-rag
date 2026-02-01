@@ -789,38 +789,47 @@ if (summaryData.disc_type && summaryData.disc_scores) {
   }
   discContent.appendChild(plotContainer);
   
-  // Add score breakdown
-  const breakdown = el("div", "disc-breakdown");
-  breakdown.style.cssText = "flex: 1 1 200px; min-width: 200px;";
+  // Add score breakdown - VERTICAL with colored blocks
+const breakdown = el("div", "disc-breakdown");
+breakdown.style.cssText = "display: flex; flex-direction: column; gap: 8px; min-width: 120px;";
+
+// DISC colors matching the wheel
+const discColors = {
+  'D': '#2d5f8d',  // Blue
+  'I': '#f9b234',  // Yellow
+  'S': '#c67a3c',  // Orange
+  'C': '#3b5998'   // Dark blue
+};
+
+// Order: D, I, S, C (top to bottom)
+['D', 'I', 'S', 'C'].forEach(letter => {
+  const scores = summaryData.disc_scores[letter];
   
-  Object.entries(summaryData.disc_scores).forEach(([letter, scores]) => {
-    const row = el("div", "disc-score-row");
-    row.style.cssText = "margin: 8px 0;";
-    
-    const label = el("span", "disc-score-label");
-    label.style.cssText = "display: inline-block; width: 30px; font-weight: 600;";
-    label.textContent = letter + ":";
-    
-    const bar = el("div", "disc-score-bar");
-    bar.style.cssText = `
-      display: inline-block;
-      width: ${scores.percent}%;
-      max-width: 150px;
-      height: 20px;
-      background: linear-gradient(90deg, #4a90e2, #64b5f6);
-      border-radius: 4px;
-      margin-left: 8px;
-      vertical-align: middle;
-    `;
-    
-    const pct = el("span", "disc-score-pct");
-    pct.style.cssText = "margin-left: 8px; font-weight: 600; color: #333;";
-    pct.textContent = Math.round(scores.percent) + "%";
-    
-    row.appendChild(label);
-    row.appendChild(bar);
-    row.appendChild(pct);
-    breakdown.appendChild(row);
+  const row = el("div", "disc-score-row");
+  row.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+  
+  // Colored square
+  const colorBox = el("div", "disc-color-box");
+  colorBox.style.cssText = `
+    width: 20px;
+    height: 20px;
+    background: ${discColors[letter]};
+    border-radius: 3px;
+    flex-shrink: 0;
+  `;
+  
+  // Label and percentage
+  const labelPct = el("div", "disc-label-pct");
+  labelPct.style.cssText = "font-weight: 600; font-size: 14px; color: #333;";
+  labelPct.textContent = `${letter}: ${Math.round(scores.percent)}%`;
+  
+  row.appendChild(colorBox);
+  row.appendChild(labelPct);
+  breakdown.appendChild(row);
   });
   
   discContent.appendChild(breakdown);
@@ -1144,36 +1153,37 @@ function createDISCPolarPlot(scores) {
     'C': '#3b5998'   // Dark blue (Compliant)
   };
   
-  // Segment labels with positions and characteristics
+  // Segment labels with CORRECTED positions
+  // Standard DISC: D=top-right, I=top-left, S=bottom-left, C=bottom-right
   const segments = [
     { 
       key: 'D', 
-      startAngle: 0, 
-      endAngle: Math.PI / 2,
+      startAngle: 0,                    // 0° (right)
+      endAngle: Math.PI / 2,            // 90° (top)
       label: 'Dominant',
       traits: ['Direct', 'Decisive', 'Doer'],
       labelPos: { x: centerX + 140, y: centerY - 140 }
     },
     { 
       key: 'I', 
-      startAngle: Math.PI / 2, 
-      endAngle: Math.PI,
+      startAngle: Math.PI / 2,          // 90° (top)
+      endAngle: Math.PI,                // 180° (left)
       label: 'Influential',
       traits: ['Inspirational', 'Interactive', 'Interesting'],
       labelPos: { x: centerX - 140, y: centerY - 140 }
     },
     { 
       key: 'S', 
-      startAngle: Math.PI, 
-      endAngle: 3 * Math.PI / 2,
+      startAngle: Math.PI,              // 180° (left)
+      endAngle: 3 * Math.PI / 2,        // 270° (bottom)
       label: 'Steady',
       traits: ['Stable', 'Supportive', 'Sincere'],
       labelPos: { x: centerX - 140, y: centerY + 140 }
     },
     { 
       key: 'C', 
-      startAngle: 3 * Math.PI / 2, 
-      endAngle: 2 * Math.PI,
+      startAngle: 3 * Math.PI / 2,      // 270° (bottom)
+      endAngle: 2 * Math.PI,            // 360° (right)
       label: 'Compliant',
       traits: ['Cautious', 'Careful', 'Conscientious'],
       labelPos: { x: centerX + 140, y: centerY + 140 }
@@ -1266,7 +1276,7 @@ function createDISCPolarPlot(scores) {
     
     ctx.font = 'bold 48px Arial';
     ctx.fillStyle = '#333';
-    ctx.fillText(seg.key, letterX, letterY);
+    ctx.fillText(seg.key, letterX, letterY + 15); // +15 to vertically center
     
     // Full label outside circle
     ctx.font = 'bold 16px Arial';
@@ -1283,12 +1293,12 @@ function createDISCPolarPlot(scores) {
       ctx.fillText(trait, labelX, labelY + 18 + (i * 14));
     });
     
-    // Percentage
-    ctx.font = 'bold 14px Arial';
+    // Percentage (inside segment)
+    ctx.font = 'bold 16px Arial';
     ctx.fillStyle = colors[seg.key];
     const pctX = centerX + (maxRadius * 0.65) * Math.cos(midAngle);
     const pctY = centerY + (maxRadius * 0.65) * Math.sin(midAngle);
-    ctx.fillText(Math.round(percent) + '%', pctX, pctY);
+    ctx.fillText(Math.round(percent) + '%', pctX, pctY + 5);
   });
   
   return canvas;
