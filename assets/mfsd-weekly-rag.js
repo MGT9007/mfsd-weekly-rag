@@ -23,11 +23,12 @@
       if (!this.supported) return;
       const loadVoices = () => {
         this.voices = window.speechSynthesis.getVoices();
-        // Restore saved voice preference, or pick a sensible default
-        const saved = localStorage.getItem('mfsd_tts_voice');
-        if (saved) {
-          this.preferredVoice = this.voices.find(v => v.name === saved) || null;
+        // First preference: voice set by admin in WP settings
+        const adminVoice = (cfg.ttsVoice || '').trim();
+        if (adminVoice) {
+          this.preferredVoice = this.voices.find(v => v.name === adminVoice) || null;
         }
+        // Fallback: sensible English default
         if (!this.preferredVoice) {
           this.preferredVoice =
             this.voices.find(v => v.name.includes('Google UK English Female')) ||
@@ -36,9 +37,6 @@
             this.voices.find(v => v.lang.startsWith('en-')) ||
             this.voices[0] || null;
         }
-        // Re-render selector if it already exists in the DOM
-        const existing = document.getElementById('mfsd-voice-selector');
-        if (existing) this._populateSelector(existing);
       };
       loadVoices();
       window.speechSynthesis.onvoiceschanged = loadVoices;
@@ -58,69 +56,6 @@
     stop() {
       if (!this.supported) return;
       window.speechSynthesis.cancel();
-    },
-
-    setVoice(name) {
-      const v = this.voices.find(v => v.name === name);
-      if (v) {
-        this.preferredVoice = v;
-        try { localStorage.setItem('mfsd_tts_voice', name); } catch(e) {}
-      }
-    },
-
-    // Populates an existing <select> with available English voices
-    _populateSelector(sel) {
-      sel.innerHTML = '';
-      const englishVoices = this.voices.filter(v => v.lang.startsWith('en'));
-      if (!englishVoices.length) {
-        const opt = document.createElement('option');
-        opt.textContent = 'Default voice';
-        sel.appendChild(opt);
-        return;
-      }
-      englishVoices.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v.name;
-        opt.textContent = v.name + ' (' + v.lang + ')';
-        if (this.preferredVoice && v.name === this.preferredVoice.name) {
-          opt.selected = true;
-        }
-        sel.appendChild(opt);
-      });
-    },
-
-    // Builds the full voice-picker widget (label + dropdown + test button)
-    makeVoicePicker() {
-      const wrap = document.createElement('div');
-      wrap.className = 'mfsd-voice-picker';
-
-      const label = document.createElement('label');
-      label.textContent = '🎙 Voice: ';
-      label.htmlFor = 'mfsd-voice-selector';
-      label.className = 'mfsd-voice-label';
-
-      const sel = document.createElement('select');
-      sel.id = 'mfsd-voice-selector';
-      sel.className = 'mfsd-voice-select';
-      this._populateSelector(sel);
-      sel.onchange = () => {
-        this.setVoice(sel.value);
-      };
-
-      const testBtn = document.createElement('button');
-      testBtn.className = 'mfsd-tts-btn mfsd-voice-test';
-      testBtn.title = 'Test this voice';
-      testBtn.textContent = '▶ Test';
-      testBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.setVoice(sel.value);
-        this.speak("Hi! I'm your AI coach. How does this voice sound?");
-      };
-
-      wrap.appendChild(label);
-      wrap.appendChild(sel);
-      wrap.appendChild(testBtn);
-      return wrap;
     },
 
     // Small 🔊 / ⏹ inline controls for any message

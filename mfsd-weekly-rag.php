@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 2.0.1
+ * Version: 3.0.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '2.0.1';
+    const VERSION = '3.0.0';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -31,6 +31,7 @@ final class MFSD_Weekly_RAG {
         add_shortcode('mfsd_rag', array($this,'shortcode'));
         add_action('rest_api_init', array($this,'register_routes'));
         add_action('admin_menu', array($this,'admin_menu'));
+        add_action('admin_init', array($this,'save_admin_settings'));
     }
 
     public function install() {
@@ -158,6 +159,7 @@ final class MFSD_Weekly_RAG {
             'restUrlQuestionChat' => esc_url_raw(rest_url('mfsd/v1/question-chat')),
             'nonce'               => wp_create_nonce('wp_rest'),
             'week'                => $week,
+            'ttsVoice'            => get_option('mfsd_rag_tts_voice', ''),
         ));
 
         wp_enqueue_script('mfsd-weekly-rag');
@@ -218,6 +220,12 @@ final class MFSD_Weekly_RAG {
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_question_chat'),
             'permission_callback' => array($this, 'check_permission'),
+        ));
+
+        register_rest_route('mfsd/v1', '/admin-reset-week', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array($this, 'api_admin_reset_week'),
+            'permission_callback' => function() { return current_user_can('manage_options'); },
         ));
     }
 
@@ -979,15 +987,16 @@ private function calculate_disc_results($user_id, $week) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
         }
 
-        // Check for cached summary first
+        // Check for cached summary — only use it if admin has enabled caching
         $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
         $cached = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",
             $user_id, $week
         ), ARRAY_A);
 
-/* TEMPORARILY DISABLED FOR PROMPT TUNING 
-        if ($cached && !empty($cached['ai_summary'])) {
+        $use_cache = (get_option('mfsd_rag_cache_summaries', '1') === '1');
+
+        if ($use_cache && $cached && !empty($cached['ai_summary'])) {
             // Return cached summary
             error_log("MFSD RAG: Returning cached summary for week $week, user $user_id");
             
@@ -1031,13 +1040,13 @@ private function calculate_disc_results($user_id, $week) {
                 ),
                 'mbti' => $cached['mbti_type'],
                 'disc_type' => isset($cached['disc_type']) ? $cached['disc_type'] : null,
-                'disc_scores' => null, // Not stored in cache, would need to recalculate
+                'disc_scores' => null,
                 'ai'   => $cached['ai_summary'],
                 'previous_weeks' => $previous_weeks,
                 'cached' => true
             ), 200);
         }
-        END TEMPORARILY DISABLED */
+
         error_log("MFSD RAG: Generating new summary for week $week, user $user_id");
 
         // Generate summary (existing code)
@@ -1439,14 +1448,276 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
         ), 200);
     }
 
+    public function save_admin_settings() {
+        if (!isset($_POST['mfsd_rag_admin_nonce'])) return;
+        if (!wp_verify_nonce($_POST['mfsd_rag_admin_nonce'], 'mfsd_rag_admin_save')) return;
+        if (!current_user_can('manage_options')) return;
+
+        update_option('mfsd_rag_cache_summaries', isset($_POST['mfsd_rag_cache_summaries']) ? '1' : '0');
+        update_option('mfsd_rag_tts_voice', sanitize_text_field($_POST['mfsd_rag_tts_voice'] ?? ''));
+
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-success is-dismissible"><p><strong>MFSD RAG settings saved.</strong></p></div>';
+        });
+    }
+
+    public function api_admin_reset_week($req) {
+        global $wpdb;
+        if (!current_user_can('manage_options')) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'Forbidden'), 403);
+        }
+
+        $user_id = (int)$req->get_param('user_id');
+        $week    = max(1, min(6, (int)$req->get_param('week')));
+
+        if (!$user_id || !$week) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'Missing user_id or week'), 400);
+        }
+
+        $deleted = 0;
+        $tables = array(
+            $wpdb->prefix . self::TBL_ANSWERS_RAG  => array('user_id' => $user_id, 'week_num' => $week),
+            $wpdb->prefix . self::TBL_ANSWERS_MB   => array('user_id' => $user_id, 'week_num' => $week),
+            $wpdb->prefix . self::TBL_MB_RESULTS   => array('user_id' => $user_id, 'week_num' => $week),
+            $wpdb->prefix . self::TBL_WEEK_SUMMARIES => array('user_id' => $user_id, 'week_num' => $week),
+        );
+
+        // DISC tables may exist
+        $disc_tables = array(
+            $wpdb->prefix . self::TBL_ANSWERS_DISC => array('user_id' => $user_id, 'week_num' => $week),
+            $wpdb->prefix . self::TBL_DISC_RESULTS => array('user_id' => $user_id, 'week_num' => $week),
+        );
+        foreach ($disc_tables as $tbl => $where) {
+            if ($wpdb->get_var("SHOW TABLES LIKE '$tbl'") == $tbl) {
+                $tables[$tbl] = $where;
+            }
+        }
+
+        foreach ($tables as $tbl => $where) {
+            $result = $wpdb->delete($tbl, $where, array('%d', '%d'));
+            if ($result !== false) $deleted += $result;
+        }
+
+        error_log("MFSD RAG Admin: Reset week $week for user $user_id — $deleted rows deleted");
+
+        return new WP_REST_Response(array(
+            'ok'      => true,
+            'deleted' => $deleted,
+            'message' => "Week $week reset for user ID $user_id. $deleted records removed."
+        ), 200);
+    }
+
     public function admin_menu() {
         add_menu_page('MFSD RAG', 'MFSD RAG', 'manage_options', 'mfsd-rag', array($this, 'admin_page'), 'dashicons-forms', 66);
     }
-    
+
     public function admin_page() {
-        echo '<div class="wrap"><h1>MFSD Weekly RAG</h1>';
-        echo '<p>Add questions to <code>' . esc_html($GLOBALS['wpdb']->prefix . self::TBL_QUESTIONS) . '</code></p>';
-        echo '</div>';
+        global $wpdb;
+
+        $cache_on  = get_option('mfsd_rag_cache_summaries', '1') === '1';
+        $tts_voice = get_option('mfsd_rag_tts_voice', '');
+        $reset_url = esc_url_raw(rest_url('mfsd/v1/admin-reset-week'));
+        $nonce     = wp_create_nonce('wp_rest');
+
+        // Build user list for the reset tool
+        $users = get_users(array('orderby' => 'display_name', 'order' => 'ASC', 'number' => 500));
+        ?>
+        <div class="wrap">
+            <h1>🎯 MFSD Weekly RAG — Admin Settings</h1>
+
+            <form method="post" action="">
+                <?php wp_nonce_field('mfsd_rag_admin_save', 'mfsd_rag_admin_nonce'); ?>
+
+                <!-- ── SUMMARY CACHING ─────────────────────────────────── -->
+                <h2 class="title">📋 Summary Settings</h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row">Summary Caching</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="mfsd_rag_cache_summaries" value="1" <?php checked($cache_on); ?>>
+                                <strong>Save &amp; reuse AI summaries</strong>
+                            </label>
+                            <p class="description">
+                                When <strong>checked</strong>, a generated AI summary is saved to the database and returned instantly on repeat visits — saves API calls and speeds up the summary screen.<br>
+                                When <strong>unchecked</strong>, a fresh AI summary is generated every time the student views their results (useful during prompt tuning / testing).
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- ── VOICE SETTINGS ─────────────────────────────────── -->
+                <h2 class="title">🎙 Voice Settings</h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row"><label for="mfsd_rag_tts_voice">Preferred TTS Voice</label></th>
+                        <td>
+                            <input type="text" id="mfsd_rag_tts_voice" name="mfsd_rag_tts_voice"
+                                   value="<?php echo esc_attr($tts_voice); ?>"
+                                   class="regular-text"
+                                   placeholder="e.g. Google UK English Female">
+                            <p class="description">
+                                Enter the exact voice name to use for text-to-speech on the student screens.<br>
+                                Use the <strong>Voice Browser</strong> below to hear and copy available voice names.
+                            </p>
+
+                            <!-- Live voice browser -->
+                            <div id="mfsd-voice-browser" style="margin-top:16px; padding:16px; background:#f6f7f7; border:1px solid #ddd; border-radius:6px; max-width:620px;">
+                                <strong>🔍 Available voices on this device / browser:</strong>
+                                <p style="color:#666; font-size:13px; margin:4px 0 10px;">
+                                    Pick any English voice below, hear it, then copy the name into the field above.
+                                </p>
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                    <select id="mfsd-voice-preview-select" style="flex:1; min-width:260px; padding:6px;">
+                                        <option value="">— loading voices —</option>
+                                    </select>
+                                    <button type="button" id="mfsd-voice-preview-btn"
+                                            class="button button-secondary">▶ Preview</button>
+                                    <button type="button" id="mfsd-voice-use-btn"
+                                            class="button button-primary">✔ Use this voice</button>
+                                </div>
+                                <p id="mfsd-voice-copied" style="display:none; color:green; margin:8px 0 0; font-weight:600;">
+                                    ✔ Voice name copied to field above!
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+
+                <?php submit_button('Save Settings'); ?>
+            </form>
+
+            <hr>
+
+            <!-- ── STUDENT WEEK RESET ──────────────────────────────────── -->
+            <h2>🔄 Reset a Student's Week</h2>
+            <p>This permanently deletes all answers, MBTI/DISC results, and the cached AI summary for the chosen student and week. Use with care — this cannot be undone.</p>
+
+            <div id="mfsd-reset-tool" style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:20px; max-width:540px;">
+                <table class="form-table" style="margin:0;" role="presentation">
+                    <tr>
+                        <th style="padding:8px 0;"><label for="mfsd-reset-user">Student</label></th>
+                        <td style="padding:8px 0;">
+                            <select id="mfsd-reset-user" style="width:100%; max-width:320px; padding:6px;">
+                                <option value="">— select a student —</option>
+                                <?php foreach ($users as $u): ?>
+                                    <option value="<?php echo esc_attr($u->ID); ?>">
+                                        <?php echo esc_html($u->display_name . ' (' . $u->user_email . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th style="padding:8px 0;"><label for="mfsd-reset-week">Week</label></th>
+                        <td style="padding:8px 0;">
+                            <select id="mfsd-reset-week" style="width:120px; padding:6px;">
+                                <?php for ($w = 1; $w <= 6; $w++): ?>
+                                    <option value="<?php echo $w; ?>">Week <?php echo $w; ?></option>
+                                <?php endfor; ?>
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+                <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
+                    <button type="button" id="mfsd-reset-btn" class="button button-secondary"
+                            style="border-color:#d63638; color:#d63638;">
+                        🗑 Reset Week
+                    </button>
+                    <span id="mfsd-reset-status" style="font-size:14px;"></span>
+                </div>
+            </div>
+
+        </div><!-- .wrap -->
+
+        <script>
+        (function() {
+            // ── Voice browser ──────────────────────────────────────────
+            const voiceSel   = document.getElementById('mfsd-voice-preview-select');
+            const previewBtn = document.getElementById('mfsd-voice-preview-btn');
+            const useBtn     = document.getElementById('mfsd-voice-use-btn');
+            const voiceField = document.getElementById('mfsd_rag_tts_voice');
+            const copiedMsg  = document.getElementById('mfsd-voice-copied');
+
+            function loadVoices() {
+                const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+                if (!voices.length) return;
+                voiceSel.innerHTML = '';
+                const saved = voiceField.value.trim();
+                voices.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.name;
+                    opt.textContent = v.name + ' (' + v.lang + ')';
+                    if (v.name === saved) opt.selected = true;
+                    voiceSel.appendChild(opt);
+                });
+            }
+            loadVoices();
+            speechSynthesis.onvoiceschanged = loadVoices;
+
+            previewBtn.addEventListener('click', function() {
+                speechSynthesis.cancel();
+                const voices = speechSynthesis.getVoices();
+                const chosen = voices.find(v => v.name === voiceSel.value);
+                const utt = new SpeechSynthesisUtterance(
+                    "Hi! I'm your AI coach on the High Performance Pathway. How does this voice sound?"
+                );
+                utt.rate = 0.92; utt.pitch = 1.05;
+                if (chosen) utt.voice = chosen;
+                speechSynthesis.speak(utt);
+            });
+
+            useBtn.addEventListener('click', function() {
+                voiceField.value = voiceSel.value;
+                copiedMsg.style.display = 'block';
+                setTimeout(() => copiedMsg.style.display = 'none', 3000);
+            });
+
+            // ── Student reset tool ─────────────────────────────────────
+            document.getElementById('mfsd-reset-btn').addEventListener('click', async function() {
+                const userId = document.getElementById('mfsd-reset-user').value;
+                const week   = document.getElementById('mfsd-reset-week').value;
+                const status = document.getElementById('mfsd-reset-status');
+
+                if (!userId) { status.textContent = '⚠ Please select a student.'; status.style.color = '#d63638'; return; }
+
+                const userName = document.getElementById('mfsd-reset-user').options[
+                    document.getElementById('mfsd-reset-user').selectedIndex
+                ].textContent;
+
+                if (!confirm('Reset Week ' + week + ' for ' + userName + '?\n\nThis will permanently delete ALL their answers and results for that week.')) return;
+
+                this.disabled = true;
+                status.textContent = 'Resetting…';
+                status.style.color = '#666';
+
+                try {
+                    const res = await fetch('<?php echo $reset_url; ?>', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-WP-Nonce': '<?php echo $nonce; ?>'
+                        },
+                        body: JSON.stringify({ user_id: parseInt(userId), week: parseInt(week) })
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                        status.textContent = '✔ ' + data.message;
+                        status.style.color = 'green';
+                    } else {
+                        status.textContent = '✘ Error: ' + (data.error || 'Unknown error');
+                        status.style.color = '#d63638';
+                    }
+                } catch(e) {
+                    status.textContent = '✘ Request failed: ' + e.message;
+                    status.style.color = '#d63638';
+                } finally {
+                    this.disabled = false;
+                }
+            });
+        })();
+        </script>
+        <?php
     }
 }
 
