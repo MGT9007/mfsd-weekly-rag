@@ -15,7 +15,7 @@
   // ============================================================================
   const mfsdTTS = {
     supported: ('speechSynthesis' in window),
-    enabled: true,  // auto-speak AI messages by default
+    enabled: true,
     voices: [],
     preferredVoice: null,
 
@@ -23,13 +23,22 @@
       if (!this.supported) return;
       const loadVoices = () => {
         this.voices = window.speechSynthesis.getVoices();
-        // Prefer a clear, friendly UK or US English voice
-        this.preferredVoice = 
-          this.voices.find(v => v.name.includes('Google UK English Female')) ||
-          this.voices.find(v => v.name.includes('Samantha')) ||
-          this.voices.find(v => v.lang === 'en-GB') ||
-          this.voices.find(v => v.lang.startsWith('en-')) ||
-          this.voices[0] || null;
+        // Restore saved voice preference, or pick a sensible default
+        const saved = localStorage.getItem('mfsd_tts_voice');
+        if (saved) {
+          this.preferredVoice = this.voices.find(v => v.name === saved) || null;
+        }
+        if (!this.preferredVoice) {
+          this.preferredVoice =
+            this.voices.find(v => v.name.includes('Google UK English Female')) ||
+            this.voices.find(v => v.name.includes('Samantha')) ||
+            this.voices.find(v => v.lang === 'en-GB') ||
+            this.voices.find(v => v.lang.startsWith('en-')) ||
+            this.voices[0] || null;
+        }
+        // Re-render selector if it already exists in the DOM
+        const existing = document.getElementById('mfsd-voice-selector');
+        if (existing) this._populateSelector(existing);
       };
       loadVoices();
       window.speechSynthesis.onvoiceschanged = loadVoices;
@@ -37,7 +46,7 @@
 
     speak(text) {
       if (!this.supported || !text) return;
-      window.speechSynthesis.cancel(); // stop any current speech
+      window.speechSynthesis.cancel();
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate   = 0.92;
       utt.pitch  = 1.05;
@@ -51,7 +60,70 @@
       window.speechSynthesis.cancel();
     },
 
-    // Creates a small 🔊 / ⏹ button pair for any message element
+    setVoice(name) {
+      const v = this.voices.find(v => v.name === name);
+      if (v) {
+        this.preferredVoice = v;
+        try { localStorage.setItem('mfsd_tts_voice', name); } catch(e) {}
+      }
+    },
+
+    // Populates an existing <select> with available English voices
+    _populateSelector(sel) {
+      sel.innerHTML = '';
+      const englishVoices = this.voices.filter(v => v.lang.startsWith('en'));
+      if (!englishVoices.length) {
+        const opt = document.createElement('option');
+        opt.textContent = 'Default voice';
+        sel.appendChild(opt);
+        return;
+      }
+      englishVoices.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        opt.textContent = v.name + ' (' + v.lang + ')';
+        if (this.preferredVoice && v.name === this.preferredVoice.name) {
+          opt.selected = true;
+        }
+        sel.appendChild(opt);
+      });
+    },
+
+    // Builds the full voice-picker widget (label + dropdown + test button)
+    makeVoicePicker() {
+      const wrap = document.createElement('div');
+      wrap.className = 'mfsd-voice-picker';
+
+      const label = document.createElement('label');
+      label.textContent = '🎙 Voice: ';
+      label.htmlFor = 'mfsd-voice-selector';
+      label.className = 'mfsd-voice-label';
+
+      const sel = document.createElement('select');
+      sel.id = 'mfsd-voice-selector';
+      sel.className = 'mfsd-voice-select';
+      this._populateSelector(sel);
+      sel.onchange = () => {
+        this.setVoice(sel.value);
+      };
+
+      const testBtn = document.createElement('button');
+      testBtn.className = 'mfsd-tts-btn mfsd-voice-test';
+      testBtn.title = 'Test this voice';
+      testBtn.textContent = '▶ Test';
+      testBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.setVoice(sel.value);
+        this.speak("Hi! I'm your AI coach. How does this voice sound?");
+      };
+
+      wrap.appendChild(label);
+      wrap.appendChild(sel);
+      wrap.appendChild(testBtn);
+      return wrap;
+    },
+
+    // Small 🔊 / ⏹ inline controls for any message
     makeControls(text) {
       const wrap = document.createElement('div');
       wrap.className = 'mfsd-tts-controls';
@@ -299,6 +371,8 @@
     card.appendChild(pos);
     card.appendChild(text);
 
+
+
     // Check if this is a DISC question
     if (q.q_type === 'DISC') {
         // DISC uses 1-5 Likert scale
@@ -507,6 +581,7 @@
           aiGuidanceDiv.textContent = guidanceData.guidance;
           if (mfsdTTS.supported) {
             aiGuidanceDiv.appendChild(mfsdTTS.makeControls(guidanceData.guidance));
+            mfsdTTS.speak(guidanceData.guidance); // auto-speak on question load
           }
         } else {
           aiGuidanceDiv.innerHTML = '<em>Question guidance unavailable.</em>';
@@ -809,6 +884,8 @@
       const weekNum = summaryData.week || week;
       card.appendChild(el("h2","rag-title","Week " + weekNum + " Summary"));
 
+
+
       // Week tabs for navigation - show ALL completed weeks
       if (allWeeksData && allWeeksData.ok && allWeeksData.weeks) {
         const tabsContainer = el("div", "rag-week-tabs");
@@ -919,7 +996,6 @@ const discColors = {
 if (summaryData.ai) {
   const aiSummaryDiv = el("div","rag-ai", summaryData.ai);
   if (mfsdTTS.supported) {
-    // Add a TTS header bar above the summary
     const ttsBar = document.createElement('div');
     ttsBar.className = 'mfsd-tts-summary-bar';
     ttsBar.innerHTML = '<span style="font-size:13px;color:#666;font-style:italic;">AI Summary</span>';
@@ -927,6 +1003,10 @@ if (summaryData.ai) {
     card.appendChild(ttsBar);
   }
   card.appendChild(aiSummaryDiv);
+  // auto-speak after DOM is in place (small delay so browser is ready)
+  if (mfsdTTS.supported) {
+    setTimeout(() => mfsdTTS.speak(summaryData.ai), 400);
+  }
 }
 
       const again = el("button","rag-btn","Back to intro");
