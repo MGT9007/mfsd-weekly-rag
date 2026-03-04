@@ -508,3 +508,75 @@
     max-width: 300px;
   }
 }
+
+/* ============================================================================
+   MFSD TEXT-TO-SPEECH CONTROLS
+   ============================================================================ */
+
+.mfsd-tts-controls {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.mfsd-tts-btn {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.mfsd-tts-btn:hover {
+  background: #e8f4fd;
+  border-color: #2196f3;
+}
+
+.mfsd-tts-speak { color: #1976d2; }
+.mfsd-tts-stop  { color: #d32f2f; }
+
+/* TTS bar above summary */
+.mfsd-tts-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f0f8ff;
+  border: 1px solid #d0e8ff;
+  border-radius: 6px 6px 0 0;
+  padding: 6px 12px;
+  margin-bottom: 0;
+}
+
+/* Make guidance box flex so button sits neatly */
+.rag-ai-question {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* AI chat messages - allow button to sit inline */
+.rag-chat-msg.ai-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 480px) {
+  .mfsd-tts-summary-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}

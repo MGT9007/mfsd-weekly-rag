@@ -9,6 +9,73 @@
   // CRITICAL: Always get week from cfg which is set by PHP from page title
   let week = cfg.week || 1;
   console.log('Initial week from config:', week);
+
+  // ============================================================================
+  // MFSD TEXT-TO-SPEECH ENGINE (Web Speech API)
+  // ============================================================================
+  const mfsdTTS = {
+    supported: ('speechSynthesis' in window),
+    enabled: true,  // auto-speak AI messages by default
+    voices: [],
+    preferredVoice: null,
+
+    init() {
+      if (!this.supported) return;
+      const loadVoices = () => {
+        this.voices = window.speechSynthesis.getVoices();
+        // Prefer a clear, friendly UK or US English voice
+        this.preferredVoice = 
+          this.voices.find(v => v.name.includes('Google UK English Female')) ||
+          this.voices.find(v => v.name.includes('Samantha')) ||
+          this.voices.find(v => v.lang === 'en-GB') ||
+          this.voices.find(v => v.lang.startsWith('en-')) ||
+          this.voices[0] || null;
+      };
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    },
+
+    speak(text) {
+      if (!this.supported || !text) return;
+      window.speechSynthesis.cancel(); // stop any current speech
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate   = 0.92;
+      utt.pitch  = 1.05;
+      utt.volume = 1;
+      if (this.preferredVoice) utt.voice = this.preferredVoice;
+      window.speechSynthesis.speak(utt);
+    },
+
+    stop() {
+      if (!this.supported) return;
+      window.speechSynthesis.cancel();
+    },
+
+    // Creates a small 🔊 / ⏹ button pair for any message element
+    makeControls(text) {
+      const wrap = document.createElement('div');
+      wrap.className = 'mfsd-tts-controls';
+
+      const speakBtn = document.createElement('button');
+      speakBtn.className = 'mfsd-tts-btn mfsd-tts-speak';
+      speakBtn.title = 'Listen';
+      speakBtn.innerHTML = '🔊';
+      speakBtn.onclick = (e) => { e.stopPropagation(); mfsdTTS.speak(text); };
+
+      const stopBtn = document.createElement('button');
+      stopBtn.className = 'mfsd-tts-btn mfsd-tts-stop';
+      stopBtn.title = 'Stop';
+      stopBtn.innerHTML = '⏹';
+      stopBtn.onclick = (e) => { e.stopPropagation(); mfsdTTS.stop(); };
+
+      wrap.appendChild(speakBtn);
+      wrap.appendChild(stopBtn);
+      return wrap;
+    }
+  };
+
+  mfsdTTS.init();
+  // ============================================================================
   
   let questions = [];
   let idx = 0;
@@ -438,6 +505,9 @@
         const guidanceData = await guidanceRes.json();
         if (guidanceData.ok && guidanceData.guidance) {
           aiGuidanceDiv.textContent = guidanceData.guidance;
+          if (mfsdTTS.supported) {
+            aiGuidanceDiv.appendChild(mfsdTTS.makeControls(guidanceData.guidance));
+          }
         } else {
           aiGuidanceDiv.innerHTML = '<em>Question guidance unavailable.</em>';
         }
@@ -457,7 +527,11 @@
     // Initial AI message
     const initialMsg = el("div", "rag-chat-msg ai-msg");
     initialMsg.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; border-left: 3px solid #2196f3;";
-    initialMsg.textContent = "Hi! How can I help you with this question?";
+    const initialText = "Hi! How can I help you with this question?";
+    initialMsg.textContent = initialText;
+    if (mfsdTTS.supported) {
+      initialMsg.appendChild(mfsdTTS.makeControls(initialText));
+    }
     chatHistory.appendChild(initialMsg);
     
     chatWrap.appendChild(chatHistory);
@@ -514,6 +588,10 @@
             const aiMsgEl = el("div", "rag-chat-msg ai-msg");
             aiMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; border-left: 3px solid #2196f3;";
             aiMsgEl.textContent = data.response;
+            if (mfsdTTS.supported) {
+              aiMsgEl.appendChild(mfsdTTS.makeControls(data.response));
+              if (mfsdTTS.enabled) mfsdTTS.speak(data.response);
+            }
             chatHistory.appendChild(aiMsgEl);
             chatHistory.scrollTop = chatHistory.scrollHeight;
           }
@@ -839,12 +917,17 @@ const discColors = {
 }
 
 if (summaryData.ai) {
-  card.appendChild(el("div","rag-ai", summaryData.ai));
+  const aiSummaryDiv = el("div","rag-ai", summaryData.ai);
+  if (mfsdTTS.supported) {
+    // Add a TTS header bar above the summary
+    const ttsBar = document.createElement('div');
+    ttsBar.className = 'mfsd-tts-summary-bar';
+    ttsBar.innerHTML = '<span style="font-size:13px;color:#666;font-style:italic;">AI Summary</span>';
+    ttsBar.appendChild(mfsdTTS.makeControls(summaryData.ai));
+    card.appendChild(ttsBar);
+  }
+  card.appendChild(aiSummaryDiv);
 }
-      
-      if (summaryData.ai) {
-        card.appendChild(el("div","rag-ai", summaryData.ai));
-      }
 
       const again = el("button","rag-btn","Back to intro");
       again.onclick = () => {
