@@ -666,51 +666,71 @@
     sendBtn.style.cssText = "padding: 10px 20px; white-space: nowrap;";
 
     // Mic button — only rendered if STT is supported
+    // Persistent conversation mode flag — true once mic is first activated
+    let conversationMode = false;
+
+    // Helper: start a fresh listen cycle (used on first click and after each AI reply)
+    function startListening() {
+      if (!mfsdSTT.supported || !micBtn) return;
+      chatInput.value = "";
+      chatInput.placeholder = "Listening…";
+      micBtn.classList.add("mfsd-mic-active");
+      micBtn.title = "Tap to end conversation";
+      micBtn.innerHTML = "🎤";
+
+      mfsdSTT.listen(
+        // interim — live transcription in input
+        (text) => { chatInput.value = text; },
+        // final — send, then restart listening automatically after AI replies
+        (text) => {
+          chatInput.value = text;
+          sendMessage();
+        },
+        // error
+        (msg) => {
+          chatInput.placeholder = "Ask about this question...";
+          const errEl = el("div", "rag-chat-msg error-msg");
+          errEl.style.cssText = "margin-bottom:10px; padding:8px 12px; background:#ffebee; border-radius:8px; border-left:3px solid #f44336; font-size:13px;";
+          errEl.textContent = "🎤 " + msg;
+          chatHistory.appendChild(errEl);
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+          // On error, stay in conversation mode but idle — user can speak again
+          if (conversationMode) {
+            setTimeout(() => startListening(), 800);
+          }
+        }
+      );
+    }
+
+    function stopConversation() {
+      conversationMode = false;
+      mfsdSTT.stop();
+      if (micBtn) {
+        micBtn.classList.remove("mfsd-mic-active");
+        micBtn.title = "Start voice conversation";
+        micBtn.innerHTML = "🎤";
+      }
+      chatInput.placeholder = "Ask about this question...";
+      chatInput.value = "";
+    }
+
     let micBtn = null;
     if (mfsdSTT.supported) {
       micBtn = document.createElement("button");
       micBtn.type = "button";
       micBtn.className = "mfsd-mic-btn";
-      micBtn.title = "Speak your question";
+      micBtn.title = "Start voice conversation";
       micBtn.innerHTML = "🎤";
 
       micBtn.addEventListener("click", () => {
-        if (mfsdSTT.isListening) {
-          mfsdSTT.stop();
-          micBtn.classList.remove("mfsd-mic-active");
-          micBtn.title = "Speak your question";
-          chatInput.placeholder = "Ask about this question...";
-          return;
+        if (conversationMode) {
+          // Second tap — end the conversation
+          stopConversation();
+        } else {
+          // First tap — enter conversation mode
+          conversationMode = true;
+          startListening();
         }
-
-        micBtn.classList.add("mfsd-mic-active");
-        micBtn.title = "Listening… click to cancel";
-        chatInput.placeholder = "Listening…";
-        chatInput.value = "";
-
-        mfsdSTT.listen(
-          // interim — show live transcription in the input as you speak
-          (text) => { chatInput.value = text; },
-          // final — fill box, reset mic state, auto-send (silence timer already waited)
-          (text) => {
-            chatInput.value = text;
-            micBtn.classList.remove("mfsd-mic-active");
-            micBtn.title = "Speak your question";
-            chatInput.placeholder = "Ask about this question...";
-            sendMessage();
-          },
-          // error — show inline in chat rather than an alert
-          (msg) => {
-            micBtn.classList.remove("mfsd-mic-active");
-            micBtn.title = "Speak your question";
-            chatInput.placeholder = "Ask about this question...";
-            const errEl = el("div", "rag-chat-msg error-msg");
-            errEl.style.cssText = "margin-bottom:10px; padding:8px 12px; background:#ffebee; border-radius:8px; border-left:3px solid #f44336; font-size:13px;";
-            errEl.textContent = "🎤 " + msg;
-            chatHistory.appendChild(errEl);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-          }
-        );
       });
     }
     
@@ -725,12 +745,11 @@
       userMsgEl.textContent = userMsg;
       chatHistory.appendChild(userMsgEl);
       
-      // Clear input and disable send button
+      // Clear input
       chatInput.value = "";
+      chatInput.placeholder = conversationMode ? "Waiting for AI reply…" : "Ask about this question...";
       sendBtn.disabled = true;
       sendBtn.textContent = "Sending...";
-      
-      // Scroll to bottom
       chatHistory.scrollTop = chatHistory.scrollHeight;
       
       try {
@@ -756,7 +775,22 @@
             aiMsgEl.textContent = data.response;
             if (mfsdTTS.supported) {
               aiMsgEl.appendChild(mfsdTTS.makeControls(data.response));
-              if (mfsdTTS.enabled) mfsdTTS.speak(data.response);
+              if (mfsdTTS.enabled) {
+                mfsdTTS.speak(data.response);
+                // Wait for TTS to finish before reopening mic
+                if (conversationMode) {
+                  const words = data.response.split(' ').length;
+                  const estimatedMs = Math.max(2000, words * 400); // rough TTS duration
+                  setTimeout(() => {
+                    if (conversationMode) startListening();
+                  }, estimatedMs);
+                }
+              } else if (conversationMode) {
+                // TTS off — restart mic immediately
+                setTimeout(() => { if (conversationMode) startListening(); }, 500);
+              }
+            } else if (conversationMode) {
+              setTimeout(() => { if (conversationMode) startListening(); }, 500);
             }
             chatHistory.appendChild(aiMsgEl);
             chatHistory.scrollTop = chatHistory.scrollHeight;
@@ -770,10 +804,11 @@
         errorMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #ffebee; border-radius: 8px; border-left: 3px solid #f44336;";
         errorMsgEl.textContent = "Sorry, I couldn't process your message. Please try again.";
         chatHistory.appendChild(errorMsgEl);
+        if (conversationMode) setTimeout(() => { if (conversationMode) startListening(); }, 800);
       } finally {
         sendBtn.disabled = false;
         sendBtn.textContent = "Send";
-        chatInput.focus();
+        if (!conversationMode) chatInput.focus();
       }
     };
     
@@ -785,15 +820,12 @@
         sendMessage();
       }
     };
-    // If user starts typing manually while mic is on, cancel listening
+    // If user starts typing manually while mic is on, pause conversation mode
     chatInput.addEventListener('input', () => {
       if (mfsdSTT.isListening) {
         mfsdSTT.stop();
-        if (micBtn) {
-          micBtn.classList.remove("mfsd-mic-active");
-          micBtn.title = "Speak your question";
-          chatInput.placeholder = "Ask about this question...";
-        }
+        chatInput.placeholder = "Ask about this question...";
+        // Don't kill conversationMode — sendMessage will re-enable after reply
       }
     });
     
@@ -814,7 +846,11 @@
     for (let i = 0; i < choices.length; i++) {
       const c = choices[i];
       const b = el("button","rag-light " + c.cls, c.label);
-      b.onclick = () => saveAnswer(q, c.key, b);
+      b.onclick = () => {
+        // Stop conversation mode when student picks their RAG answer
+        stopConversation();
+        saveAnswer(q, c.key, b);
+      };
       lights.appendChild(b);
     }
     card.appendChild(lights);
