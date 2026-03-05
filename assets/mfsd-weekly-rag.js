@@ -91,77 +91,100 @@
     supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
     recognition: null,
     isListening: false,
+    _silenceTimer: null,
+    _silenceDelay: 2000, // ms of silence before auto-sending
+    _onFinalCb: null,
+    _onInterimCb: null,
+    _onErrorCb: null,
+    _accumulated: '',   // builds up the full sentence across multiple result events
 
     init() {
       if (!this.supported) return;
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       this.recognition = new SR();
       this.recognition.lang = 'en-GB';
-      this.recognition.interimResults = true;  // show words as they come in
+      this.recognition.interimResults = true;
       this.recognition.maxAlternatives = 1;
-      this.recognition.continuous = false;
-    },
-
-    // Start listening — calls onInterim(text) as words arrive,
-    // onFinal(text) when the user stops speaking, onError(msg) on failure.
-    listen(onInterim, onFinal, onError) {
-      if (!this.supported || !this.recognition) {
-        onError('Speech recognition is not supported in this browser.');
-        return;
-      }
-      if (this.isListening) {
-        this.stop();
-        return;
-      }
-
-      // Stop TTS so the mic doesn't pick up the AI voice
-      mfsdTTS.stop();
-
-      this.isListening = true;
+      this.recognition.continuous = true; // WE control when it stops, not the browser
 
       this.recognition.onresult = (e) => {
         let interim = '';
-        let finalText = '';
+        // Collect any new final segments into accumulated text
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const t = e.results[i][0].transcript;
           if (e.results[i].isFinal) {
-            finalText += t;
+            this._accumulated += (this._accumulated ? ' ' : '') + t.trim();
           } else {
-            interim += t;
+            interim = t;
           }
         }
-        if (interim) onInterim(interim);
-        if (finalText) onFinal(finalText);
+
+        // Show the full picture: confirmed text + what's still being heard
+        const display = this._accumulated + (interim ? ' ' + interim : '');
+        if (this._onInterimCb) this._onInterimCb(display.trim());
+
+        // Reset the silence timer every time speech arrives
+        clearTimeout(this._silenceTimer);
+        this._silenceTimer = setTimeout(() => {
+          // User has been quiet for _silenceDelay ms — we're done
+          const finalText = this._accumulated || display.trim();
+          this.stop();
+          if (finalText && this._onFinalCb) this._onFinalCb(finalText.trim());
+        }, this._silenceDelay);
       };
 
       this.recognition.onerror = (e) => {
-        this.isListening = false;
+        this._cleanup();
         const msgs = {
           'not-allowed'  : 'Microphone access was denied. Please allow microphone permission and try again.',
           'no-speech'    : 'No speech was detected. Please try again.',
           'network'      : 'A network error occurred. Please check your connection.',
           'audio-capture': 'No microphone was found on this device.',
         };
-        onError(msgs[e.error] || 'Speech recognition error: ' + e.error);
+        if (this._onErrorCb) this._onErrorCb(msgs[e.error] || 'Speech recognition error: ' + e.error);
       };
 
       this.recognition.onend = () => {
+        // If we stopped intentionally the timer already fired or was cleared — do nothing
         this.isListening = false;
       };
+    },
+
+    listen(onInterim, onFinal, onError) {
+      if (!this.supported || !this.recognition) {
+        onError('Speech recognition is not supported in this browser.');
+        return;
+      }
+      if (this.isListening) { this.stop(); return; }
+
+      mfsdTTS.stop(); // don't let the mic hear the AI
+
+      this._onInterimCb = onInterim;
+      this._onFinalCb   = onFinal;
+      this._onErrorCb   = onError;
+      this._accumulated = '';
+      this.isListening  = true;
 
       try {
         this.recognition.start();
       } catch(e) {
-        this.isListening = false;
+        this._cleanup();
         onError('Could not start microphone: ' + e.message);
       }
     },
 
     stop() {
-      if (this.recognition && this.isListening) {
-        this.recognition.stop();
-        this.isListening = false;
+      clearTimeout(this._silenceTimer);
+      if (this.recognition) {
+        try { this.recognition.stop(); } catch(e) {}
       }
+      this.isListening = false;
+    },
+
+    _cleanup() {
+      clearTimeout(this._silenceTimer);
+      this.isListening  = false;
+      this._accumulated = '';
     }
   };
 
@@ -668,13 +691,13 @@
         mfsdSTT.listen(
           // interim — show live transcription in the input as you speak
           (text) => { chatInput.value = text; },
-          // final — fill box, reset mic state, auto-send after short pause
+          // final — fill box, reset mic state, auto-send (silence timer already waited)
           (text) => {
             chatInput.value = text;
             micBtn.classList.remove("mfsd-mic-active");
             micBtn.title = "Speak your question";
             chatInput.placeholder = "Ask about this question...";
-            setTimeout(() => sendMessage(), 1500);
+            sendMessage();
           },
           // error — show inline in chat rather than an alert
           (msg) => {
