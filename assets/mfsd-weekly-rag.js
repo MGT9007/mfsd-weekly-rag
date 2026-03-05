@@ -42,7 +42,7 @@
       window.speechSynthesis.onvoiceschanged = loadVoices;
     },
 
-    speak(text) {
+    speak(text, onEnd) {
       if (!this.supported || !text) return;
       window.speechSynthesis.cancel();
       const utt = new SpeechSynthesisUtterance(text);
@@ -50,6 +50,7 @@
       utt.pitch  = 1.05;
       utt.volume = 1;
       if (this.preferredVoice) utt.voice = this.preferredVoice;
+      if (onEnd) utt.onend = onEnd;
       window.speechSynthesis.speak(utt);
     },
 
@@ -84,8 +85,8 @@
   mfsdTTS.init();
   // ============================================================================
 
-  // ============================================================================
-  // MFSD SPEECH-TO-TEXT ENGINE (Web Speech Recognition API)
+  // Conversation mode from admin setting — 'polite' or 'normal'
+  const convMode = (cfg.conversationMode || 'polite');
   // ============================================================================
   const mfsdSTT = {
     supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
@@ -108,6 +109,12 @@
       this.recognition.continuous = true; // WE control when it stops, not the browser
 
       this.recognition.onresult = (e) => {
+        // Normal mode: first word detected cancels the AI mid-sentence
+        if (convMode === 'normal' && !this._interrupted) {
+          this._interrupted = true;
+          mfsdTTS.stop();
+        }
+
         let interim = '';
         // Collect any new final segments into accumulated text
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -157,12 +164,15 @@
       }
       if (this.isListening) { this.stop(); return; }
 
-      mfsdTTS.stop(); // don't let the mic hear the AI
+      // Polite mode: stop AI speaking before listening
+      // Normal mode: keep mic open alongside TTS — first word cancels AI mid-sentence
+      if (convMode === 'polite') mfsdTTS.stop();
 
       this._onInterimCb = onInterim;
       this._onFinalCb   = onFinal;
       this._onErrorCb   = onError;
       this._accumulated = '';
+      this._interrupted = false;
       this.isListening  = true;
 
       try {
@@ -776,17 +786,18 @@
             if (mfsdTTS.supported) {
               aiMsgEl.appendChild(mfsdTTS.makeControls(data.response));
               if (mfsdTTS.enabled) {
-                mfsdTTS.speak(data.response);
-                // Wait for TTS to finish before reopening mic
-                if (conversationMode) {
-                  const words = data.response.split(' ').length;
-                  const estimatedMs = Math.max(2000, words * 400); // rough TTS duration
-                  setTimeout(() => {
+                if (convMode === 'polite') {
+                  // Polite: wait for TTS to fully finish, then restart mic
+                  mfsdTTS.speak(data.response, () => {
                     if (conversationMode) startListening();
-                  }, estimatedMs);
+                  });
+                } else {
+                  // Normal: start mic immediately alongside TTS
+                  // STT onresult will cancel TTS the moment student speaks
+                  mfsdTTS.speak(data.response);
+                  if (conversationMode) startListening();
                 }
               } else if (conversationMode) {
-                // TTS off — restart mic immediately
                 setTimeout(() => { if (conversationMode) startListening(); }, 500);
               }
             } else if (conversationMode) {

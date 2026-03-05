@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 4.0.4
+ * Version: 4.0.5
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '4.0.4';
+    const VERSION = '4.0.5';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -160,6 +160,7 @@ final class MFSD_Weekly_RAG {
             'nonce'               => wp_create_nonce('wp_rest'),
             'week'                => $week,
             'ttsVoice'            => get_option('mfsd_rag_tts_voice', ''),
+            'conversationMode'    => get_option('mfsd_rag_conversation_mode', 'polite'),
         ));
 
         wp_enqueue_script('mfsd-weekly-rag');
@@ -1455,6 +1456,7 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
 
         update_option('mfsd_rag_cache_summaries', isset($_POST['mfsd_rag_cache_summaries']) ? '1' : '0');
         update_option('mfsd_rag_tts_voice', sanitize_text_field($_POST['mfsd_rag_tts_voice'] ?? ''));
+        update_option('mfsd_rag_conversation_mode', in_array($_POST['mfsd_rag_conversation_mode'] ?? '', ['polite','normal']) ? $_POST['mfsd_rag_conversation_mode'] : 'polite');
 
         add_action('admin_notices', function() {
             echo '<div class="notice notice-success is-dismissible"><p><strong>MFSD RAG settings saved.</strong></p></div>';
@@ -1516,6 +1518,7 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
 
         $cache_on  = get_option('mfsd_rag_cache_summaries', '1') === '1';
         $tts_voice = get_option('mfsd_rag_tts_voice', '');
+        $conv_mode = get_option('mfsd_rag_conversation_mode', 'polite');
         $reset_url = esc_url_raw(rest_url('mfsd/v1/admin-reset-week'));
         $nonce     = wp_create_nonce('wp_rest');
 
@@ -1580,6 +1583,30 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                                     ✔ Voice name copied to field above!
                                 </p>
                             </div>
+                        </td>
+                    </tr>
+                </table>
+
+                <!-- ── CONVERSATION MODE ───────────────────────────────── -->
+                <h2 class="title">🗣 Conversation Mode</h2>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row">Mic behaviour during AI reply</th>
+                        <td>
+                            <fieldset>
+                                <label style="display:block; margin-bottom:10px;">
+                                    <input type="radio" name="mfsd_rag_conversation_mode" value="polite"
+                                        <?php checked($conv_mode, 'polite'); ?>>
+                                    <strong>Polite mode</strong> — mic turns off while the AI is speaking, restarts automatically once it has finished.
+                                    Best for younger students or noisy environments.
+                                </label>
+                                <label style="display:block;">
+                                    <input type="radio" name="mfsd_rag_conversation_mode" value="normal"
+                                        <?php checked($conv_mode, 'normal'); ?>>
+                                    <strong>Normal mode</strong> — mic stays open while the AI speaks. Speaking at any point immediately stops the AI and lets the student respond.
+                                    More natural for confident users.
+                                </label>
+                            </fieldset>
                         </td>
                     </tr>
                 </table>
