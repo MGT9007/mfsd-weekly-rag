@@ -674,7 +674,7 @@
             micBtn.classList.remove("mfsd-mic-active");
             micBtn.title = "Speak your question";
             chatInput.placeholder = "Ask about this question...";
-            setTimeout(() => sendMessage(), 400);
+            setTimeout(() => sendMessage(), 1500);
           },
           // error — show inline in chat rather than an alert
           (msg) => {
