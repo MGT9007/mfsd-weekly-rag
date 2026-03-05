@@ -83,6 +83,90 @@
 
   mfsdTTS.init();
   // ============================================================================
+
+  // ============================================================================
+  // MFSD SPEECH-TO-TEXT ENGINE (Web Speech Recognition API)
+  // ============================================================================
+  const mfsdSTT = {
+    supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+    recognition: null,
+    isListening: false,
+
+    init() {
+      if (!this.supported) return;
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      this.recognition = new SR();
+      this.recognition.lang = 'en-GB';
+      this.recognition.interimResults = true;  // show words as they come in
+      this.recognition.maxAlternatives = 1;
+      this.recognition.continuous = false;
+    },
+
+    // Start listening — calls onInterim(text) as words arrive,
+    // onFinal(text) when the user stops speaking, onError(msg) on failure.
+    listen(onInterim, onFinal, onError) {
+      if (!this.supported || !this.recognition) {
+        onError('Speech recognition is not supported in this browser.');
+        return;
+      }
+      if (this.isListening) {
+        this.stop();
+        return;
+      }
+
+      // Stop TTS so the mic doesn't pick up the AI voice
+      mfsdTTS.stop();
+
+      this.isListening = true;
+
+      this.recognition.onresult = (e) => {
+        let interim = '';
+        let finalText = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) {
+            finalText += t;
+          } else {
+            interim += t;
+          }
+        }
+        if (interim) onInterim(interim);
+        if (finalText) onFinal(finalText);
+      };
+
+      this.recognition.onerror = (e) => {
+        this.isListening = false;
+        const msgs = {
+          'not-allowed'  : 'Microphone access was denied. Please allow microphone permission and try again.',
+          'no-speech'    : 'No speech was detected. Please try again.',
+          'network'      : 'A network error occurred. Please check your connection.',
+          'audio-capture': 'No microphone was found on this device.',
+        };
+        onError(msgs[e.error] || 'Speech recognition error: ' + e.error);
+      };
+
+      this.recognition.onend = () => {
+        this.isListening = false;
+      };
+
+      try {
+        this.recognition.start();
+      } catch(e) {
+        this.isListening = false;
+        onError('Could not start microphone: ' + e.message);
+      }
+    },
+
+    stop() {
+      if (this.recognition && this.isListening) {
+        this.recognition.stop();
+        this.isListening = false;
+      }
+    }
+  };
+
+  mfsdSTT.init();
+  // ============================================================================
   
   let questions = [];
   let idx = 0;
@@ -557,6 +641,55 @@
     
     const sendBtn = el("button", "rag-btn", "Send");
     sendBtn.style.cssText = "padding: 10px 20px; white-space: nowrap;";
+
+    // Mic button — only rendered if STT is supported
+    let micBtn = null;
+    if (mfsdSTT.supported) {
+      micBtn = document.createElement("button");
+      micBtn.type = "button";
+      micBtn.className = "mfsd-mic-btn";
+      micBtn.title = "Speak your question";
+      micBtn.innerHTML = "🎤";
+
+      micBtn.addEventListener("click", () => {
+        if (mfsdSTT.isListening) {
+          mfsdSTT.stop();
+          micBtn.classList.remove("mfsd-mic-active");
+          micBtn.title = "Speak your question";
+          chatInput.placeholder = "Ask about this question...";
+          return;
+        }
+
+        micBtn.classList.add("mfsd-mic-active");
+        micBtn.title = "Listening… click to cancel";
+        chatInput.placeholder = "Listening…";
+        chatInput.value = "";
+
+        mfsdSTT.listen(
+          // interim — show live transcription in the input as you speak
+          (text) => { chatInput.value = text; },
+          // final — fill box, reset mic state, auto-send after short pause
+          (text) => {
+            chatInput.value = text;
+            micBtn.classList.remove("mfsd-mic-active");
+            micBtn.title = "Speak your question";
+            chatInput.placeholder = "Ask about this question...";
+            setTimeout(() => sendMessage(), 400);
+          },
+          // error — show inline in chat rather than an alert
+          (msg) => {
+            micBtn.classList.remove("mfsd-mic-active");
+            micBtn.title = "Speak your question";
+            chatInput.placeholder = "Ask about this question...";
+            const errEl = el("div", "rag-chat-msg error-msg");
+            errEl.style.cssText = "margin-bottom:10px; padding:8px 12px; background:#ffebee; border-radius:8px; border-left:3px solid #f44336; font-size:13px;";
+            errEl.textContent = "🎤 " + msg;
+            chatHistory.appendChild(errEl);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+          }
+        );
+      });
+    }
     
     // Send message function
     const sendMessage = async () => {
@@ -628,8 +761,20 @@
         sendMessage();
       }
     };
+    // If user starts typing manually while mic is on, cancel listening
+    chatInput.addEventListener('input', () => {
+      if (mfsdSTT.isListening) {
+        mfsdSTT.stop();
+        if (micBtn) {
+          micBtn.classList.remove("mfsd-mic-active");
+          micBtn.title = "Speak your question";
+          chatInput.placeholder = "Ask about this question...";
+        }
+      }
+    });
     
     inputContainer.appendChild(chatInput);
+    if (micBtn) inputContainer.appendChild(micBtn);
     inputContainer.appendChild(sendBtn);
     chatWrap.appendChild(inputContainer);
     
