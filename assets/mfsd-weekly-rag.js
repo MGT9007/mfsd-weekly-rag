@@ -639,7 +639,7 @@
     
     // Chat history container
     const chatHistory = el("div", "rag-chat-history");
-    chatHistory.style.cssText = "max-height: 300px; overflow-y: auto; margin-bottom: 12px; padding: 10px; background: #f5f5f5; border-radius: 6px;";
+    chatHistory.style.cssText = "max-height: 420px; overflow-y: auto; margin-bottom: 12px; padding: 10px; background: #f5f5f5; border-radius: 6px; scroll-behavior: smooth;";
     
     // Initial AI message
     const initialMsg = el("div", "rag-chat-msg ai-msg");
@@ -655,12 +655,12 @@
     
     // Input container
     const inputContainer = el("div");
-    inputContainer.style.cssText = "display: flex; gap: 8px; align-items: center;";
+    inputContainer.style.cssText = "display: flex; gap: 8px; align-items: flex-end;";
     
-    const chatInput = document.createElement("input");
-    chatInput.type = "text";
+    const chatInput = document.createElement("textarea");
+    chatInput.rows = 2;
     chatInput.placeholder = "Ask about this question...";
-    chatInput.style.cssText = "flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;";
+    chatInput.style.cssText = "flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; resize: none; font-family: inherit; line-height: 1.4;";
     
     const sendBtn = el("button", "rag-btn", "Send");
     sendBtn.style.cssText = "padding: 10px 20px; white-space: nowrap;";
@@ -721,7 +721,7 @@
       
       // Add user message to history
       const userMsgEl = el("div", "rag-chat-msg user-msg");
-      userMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #fff; border-radius: 8px; border-left: 3px solid #666; text-align: right;";
+      userMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #fff; border-radius: 8px; border-left: 3px solid #666; text-align: left;";
       userMsgEl.textContent = userMsg;
       chatHistory.appendChild(userMsgEl);
       
@@ -779,8 +779,9 @@
     
     // Event listeners
     sendBtn.onclick = sendMessage;
-    chatInput.onkeypress = (e) => {
-      if (e.key === 'Enter') {
+    chatInput.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
         sendMessage();
       }
     };
