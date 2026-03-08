@@ -59,6 +59,77 @@
       window.speechSynthesis.cancel();
     },
 
+    // Speaks text while progressively revealing it into `element` based on textReveal mode.
+    // onEnd fires when speech completes (or immediately in block mode).
+    speakWithReveal(text, element, onEnd) {
+      if (!this.supported || !text) {
+        element.textContent = text;
+        if (onEnd) onEnd();
+        return;
+      }
+      window.speechSynthesis.cancel();
+
+      // Block mode — show everything up front, speak normally
+      if (textReveal === 'block') {
+        element.textContent = text;
+        this.speak(text, onEnd);
+        return;
+      }
+
+      // Sentence / word modes — start empty, reveal via onboundary
+      element.textContent = '';
+
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate   = 0.92;
+      utt.pitch  = 1.05;
+      utt.volume = 1;
+      if (this.preferredVoice) utt.voice = this.preferredVoice;
+
+      if (textReveal === 'word') {
+        utt.onboundary = (e) => {
+          if (e.name !== 'word') return;
+          // Reveal up to end of the current word
+          const end = text.indexOf(' ', e.charIndex + 1);
+          element.textContent = end > -1 ? text.slice(0, end) : text;
+        };
+
+      } else if (textReveal === 'sentence') {
+        // Pre-split into sentences so we know each sentence's end position
+        const sentenceEnds = [];
+        let match;
+        const re = /[^.!?]*[.!?]+["'\u201d]?\s*/g;
+        while ((match = re.exec(text)) !== null) {
+          sentenceEnds.push(match.index + match[0].length);
+        }
+        // If no punctuation found treat whole text as one sentence
+        if (!sentenceEnds.length) sentenceEnds.push(text.length);
+
+        utt.onboundary = (e) => {
+          if (e.name !== 'word') return;
+          // Reveal up to the end of whichever sentence we're currently inside
+          for (let i = 0; i < sentenceEnds.length; i++) {
+            if (e.charIndex < sentenceEnds[i]) {
+              element.textContent = text.slice(0, sentenceEnds[i]).trimEnd();
+              break;
+            }
+          }
+        };
+      }
+
+      utt.onend = () => {
+        element.textContent = text; // guarantee full text is visible at the end
+        if (onEnd) onEnd();
+      };
+
+      // Fallback: if onboundary never fires (some browsers), show full text after a beat
+      utt.onerror = () => {
+        element.textContent = text;
+        if (onEnd) onEnd();
+      };
+
+      window.speechSynthesis.speak(utt);
+    },
+
     // Small 🔊 / ⏹ inline controls for any message
     makeControls(text) {
       const wrap = document.createElement('div');
@@ -85,8 +156,9 @@
   mfsdTTS.init();
   // ============================================================================
 
-  // Conversation mode from admin setting — 'polite' or 'normal'
-  const convMode = (cfg.conversationMode || 'polite');
+  // Admin settings
+  const convMode   = (cfg.conversationMode || 'polite');
+  const textReveal = (cfg.textReveal || 'block');
   // ============================================================================
   const mfsdSTT = {
     supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
@@ -630,10 +702,15 @@
       if (guidanceRes.ok) {
         const guidanceData = await guidanceRes.json();
         if (guidanceData.ok && guidanceData.guidance) {
-          aiGuidanceDiv.textContent = guidanceData.guidance;
+          // Use a child span for the text so TTS controls sibling isn't wiped
+          const guidanceText = document.createElement('span');
+          aiGuidanceDiv.innerHTML = '';
+          aiGuidanceDiv.appendChild(guidanceText);
           if (mfsdTTS.supported) {
             aiGuidanceDiv.appendChild(mfsdTTS.makeControls(guidanceData.guidance));
-            mfsdTTS.speak(guidanceData.guidance); // auto-speak on question load
+            mfsdTTS.speakWithReveal(guidanceData.guidance, guidanceText);
+          } else {
+            guidanceText.textContent = guidanceData.guidance;
           }
         } else {
           aiGuidanceDiv.innerHTML = '<em>Question guidance unavailable.</em>';
@@ -782,29 +859,29 @@
           if (data.ok && data.response) {
             const aiMsgEl = el("div", "rag-chat-msg ai-msg");
             aiMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; border-left: 3px solid #2196f3;";
-            aiMsgEl.textContent = data.response;
+            const aiMsgText = document.createElement('span');
+            aiMsgEl.appendChild(aiMsgText);
+            chatHistory.appendChild(aiMsgEl);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
             if (mfsdTTS.supported) {
               aiMsgEl.appendChild(mfsdTTS.makeControls(data.response));
               if (mfsdTTS.enabled) {
                 if (convMode === 'polite') {
-                  // Polite: wait for TTS to fully finish, then restart mic
-                  mfsdTTS.speak(data.response, () => {
+                  mfsdTTS.speakWithReveal(data.response, aiMsgText, () => {
                     if (conversationMode) startListening();
                   });
                 } else {
-                  // Normal: start mic immediately alongside TTS
-                  // STT onresult will cancel TTS the moment student speaks
-                  mfsdTTS.speak(data.response);
+                  mfsdTTS.speakWithReveal(data.response, aiMsgText);
                   if (conversationMode) startListening();
                 }
-              } else if (conversationMode) {
-                setTimeout(() => { if (conversationMode) startListening(); }, 500);
+              } else {
+                aiMsgText.textContent = data.response;
+                if (conversationMode) setTimeout(() => { if (conversationMode) startListening(); }, 500);
               }
-            } else if (conversationMode) {
-              setTimeout(() => { if (conversationMode) startListening(); }, 500);
+            } else {
+              aiMsgText.textContent = data.response;
+              if (conversationMode) setTimeout(() => { if (conversationMode) startListening(); }, 500);
             }
-            chatHistory.appendChild(aiMsgEl);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
           }
         } else {
           throw new Error('Failed to get response');
@@ -1145,7 +1222,7 @@ const discColors = {
 }
 
 if (summaryData.ai) {
-  const aiSummaryDiv = el("div","rag-ai", summaryData.ai);
+  const aiSummaryDiv = el("div","rag-ai"); // start empty — speakWithReveal fills it
   if (mfsdTTS.supported) {
     const ttsBar = document.createElement('div');
     ttsBar.className = 'mfsd-tts-summary-bar';
@@ -1154,9 +1231,10 @@ if (summaryData.ai) {
     card.appendChild(ttsBar);
   }
   card.appendChild(aiSummaryDiv);
-  // auto-speak after DOM is in place (small delay so browser is ready)
   if (mfsdTTS.supported) {
-    setTimeout(() => mfsdTTS.speak(summaryData.ai), 400);
+    setTimeout(() => mfsdTTS.speakWithReveal(summaryData.ai, aiSummaryDiv), 400);
+  } else {
+    aiSummaryDiv.textContent = summaryData.ai;
   }
 }
 
