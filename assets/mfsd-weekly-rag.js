@@ -61,6 +61,32 @@
 
     // Speaks text while progressively revealing it into `element` based on textReveal mode.
     // onEnd fires when speech completes (or immediately in block mode).
+    // Helper: split text into sentences
+    _splitSentences(text) {
+      const sentences = text.match(/[^.!?]+[.!?]+["'\u201d]?\s*/g);
+      if (!sentences || !sentences.length) return [text];
+      // Catch any trailing text without punctuation
+      const joined = sentences.join('');
+      const remainder = text.slice(joined.length).trim();
+      if (remainder) sentences.push(remainder);
+      return sentences.map(s => s.trim()).filter(Boolean);
+    },
+
+    // Helper: split text into words
+    _splitWords(text) {
+      return text.split(/\s+/).filter(Boolean);
+    },
+
+    // Make a configured utterance
+    _makeUtt(text) {
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate   = 0.92;
+      utt.pitch  = 1.05;
+      utt.volume = 1;
+      if (this.preferredVoice) utt.voice = this.preferredVoice;
+      return utt;
+    },
+
     speakWithReveal(text, element, onEnd) {
       if (!this.supported || !text) {
         element.textContent = text;
@@ -68,66 +94,90 @@
         return;
       }
       window.speechSynthesis.cancel();
+      element.textContent = '';
 
-      // Block mode — show everything up front, speak normally
+      // ── Block mode ───────────────────────────────────────────────────────
       if (textReveal === 'block') {
         element.textContent = text;
         this.speak(text, onEnd);
         return;
       }
 
-      // Sentence / word modes — start empty, reveal via onboundary
-      element.textContent = '';
+      // ── Sentence mode ────────────────────────────────────────────────────
+      // Speak each sentence as its own utterance, reveal that sentence as it starts.
+      // Chaining via onend is 100% reliable cross-browser — no onboundary needed.
+      if (textReveal === 'sentence') {
+        const sentences = this._splitSentences(text);
+        let revealed = '';
+        let i = 0;
 
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate   = 0.92;
-      utt.pitch  = 1.05;
-      utt.volume = 1;
-      if (this.preferredVoice) utt.voice = this.preferredVoice;
-
-      if (textReveal === 'word') {
-        utt.onboundary = (e) => {
-          if (e.name !== 'word') return;
-          // Reveal up to end of the current word
-          const end = text.indexOf(' ', e.charIndex + 1);
-          element.textContent = end > -1 ? text.slice(0, end) : text;
-        };
-
-      } else if (textReveal === 'sentence') {
-        // Pre-split into sentences so we know each sentence's end position
-        const sentenceEnds = [];
-        let match;
-        const re = /[^.!?]*[.!?]+["'\u201d]?\s*/g;
-        while ((match = re.exec(text)) !== null) {
-          sentenceEnds.push(match.index + match[0].length);
-        }
-        // If no punctuation found treat whole text as one sentence
-        if (!sentenceEnds.length) sentenceEnds.push(text.length);
-
-        utt.onboundary = (e) => {
-          if (e.name !== 'word') return;
-          // Reveal up to the end of whichever sentence we're currently inside
-          for (let i = 0; i < sentenceEnds.length; i++) {
-            if (e.charIndex < sentenceEnds[i]) {
-              element.textContent = text.slice(0, sentenceEnds[i]).trimEnd();
-              break;
-            }
+        const speakNext = () => {
+          if (i >= sentences.length) {
+            element.textContent = text; // guarantee full text
+            if (onEnd) onEnd();
+            return;
           }
+          const sentence = sentences[i++];
+          revealed += (revealed ? ' ' : '') + sentence;
+          element.textContent = revealed;
+
+          const utt = this._makeUtt(sentence);
+          utt.onend   = speakNext;
+          utt.onerror = () => { element.textContent = text; if (onEnd) onEnd(); };
+          window.speechSynthesis.speak(utt);
         };
+
+        speakNext();
+        return;
       }
 
-      utt.onend = () => {
-        element.textContent = text; // guarantee full text is visible at the end
-        if (onEnd) onEnd();
-      };
+      // ── Word mode ────────────────────────────────────────────────────────
+      // Speak whole text as one natural utterance (no choppy pauses).
+      // Reveal words via a setInterval timer calibrated to our TTS rate.
+      // At rate=0.92, average English speech ≈ 130wpm → ~462ms per word.
+      if (textReveal === 'word') {
+        const words = this._splitWords(text);
+        const msPerWord = Math.round(60000 / (130 * 0.92)); // ≈ 502ms
 
-      // Fallback: if onboundary never fires (some browsers), show full text after a beat
-      utt.onerror = () => {
-        element.textContent = text;
-        if (onEnd) onEnd();
-      };
+        let wordIndex = 0;
+        let timer = null;
 
-      window.speechSynthesis.speak(utt);
+        const revealNext = () => {
+          if (wordIndex >= words.length) {
+            element.textContent = text;
+            clearInterval(timer);
+            return;
+          }
+          wordIndex++;
+          element.textContent = words.slice(0, wordIndex).join(' ');
+        };
+
+        const utt = this._makeUtt(text);
+
+        utt.onstart = () => {
+          // Start the word-reveal timer exactly when speech begins
+          timer = setInterval(revealNext, msPerWord);
+        };
+
+        utt.onend = () => {
+          clearInterval(timer);
+          element.textContent = text; // guarantee everything visible
+          if (onEnd) onEnd();
+        };
+
+        utt.onerror = () => {
+          clearInterval(timer);
+          element.textContent = text;
+          if (onEnd) onEnd();
+        };
+
+        window.speechSynthesis.speak(utt);
+        return;
+      }
+
+      // Safety fallback
+      element.textContent = text;
+      this.speak(text, onEnd);
     },
 
     // Small 🔊 / ⏹ inline controls for any message
