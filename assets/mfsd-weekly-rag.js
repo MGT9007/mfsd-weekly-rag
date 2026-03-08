@@ -137,7 +137,7 @@
       // At rate=0.92, average English speech ≈ 130wpm → ~462ms per word.
       if (textReveal === 'word') {
         const words = this._splitWords(text);
-        const msPerWord = Math.round(60000 / (130 * 0.92)); // ≈ 502ms
+        const msPerWord = Math.round(60000 / (130 * 0.92) * 0.83); // ≈ 417ms — slightly ahead of voice
 
         let wordIndex = 0;
         let timer = null;
