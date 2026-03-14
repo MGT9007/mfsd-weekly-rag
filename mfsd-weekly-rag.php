@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 5.0.2
+ * Version: 5.0.3
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '5.0.2';
+    const VERSION = '4.0.20';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS      = 'mfsd_rag_questions';
@@ -121,16 +121,13 @@ final class MFSD_Weekly_RAG {
 
         if ($wpdb->get_var("SHOW TABLES LIKE '$q'") !== $q) return;
 
-        // Ensure DISC is in questions enum
         $col = $wpdb->get_row("SHOW COLUMNS FROM $q LIKE 'q_type'", ARRAY_A);
         if ($col && strpos($col['Type'], 'DISC') === false) {
             $wpdb->query("ALTER TABLE $q MODIFY q_type ENUM('RAG','MBTI','DISC') NOT NULL DEFAULT 'RAG'");
         }
-        // Ensure disc_mapping column exists
         if (!$wpdb->get_row("SHOW COLUMNS FROM $q LIKE 'disc_mapping'", ARRAY_A)) {
             $wpdb->query("ALTER TABLE $q ADD COLUMN disc_mapping JSON NULL AFTER green_score");
         }
-        // Create red plans table if missing
         if ($wpdb->get_var("SHOW TABLES LIKE '$rp'") !== $rp) {
             require_once ABSPATH . 'wp-admin/includes/upgrade.php';
             $charset = $wpdb->get_charset_collate();
@@ -168,22 +165,22 @@ final class MFSD_Weekly_RAG {
             if (preg_match('/Week\s*([1-6])\s*RAG/i', $title, $m)) $week = (int)$m[1];
         }
         wp_localize_script('mfsd-weekly-rag', 'MFSD_RAG_CFG', array(
-            'restUrlQuestions'     => esc_url_raw(rest_url('mfsd/v1/questions')),
-            'restUrlAnswer'        => esc_url_raw(rest_url('mfsd/v1/answer')),
-            'restUrlSummary'       => esc_url_raw(rest_url('mfsd/v1/summary')),
-            'restUrlStatus'        => esc_url_raw(rest_url('mfsd/v1/status')),
-            'restUrlPrevious'      => esc_url_raw(rest_url('mfsd/v1/previous-answer')),
-            'restUrlGuidance'      => esc_url_raw(rest_url('mfsd/v1/question-guidance')),
-            'restUrlAllWeeks'      => esc_url_raw(rest_url('mfsd/v1/all-weeks-summary')),
-            'restUrlQuestionChat'  => esc_url_raw(rest_url('mfsd/v1/question-chat')),
-            'restUrlRedSuggestions'=> esc_url_raw(rest_url('mfsd/v1/red-suggestions')),
-            'restUrlSaveRedPlan'   => esc_url_raw(rest_url('mfsd/v1/red-plan')),
-            'nonce'                => wp_create_nonce('wp_rest'),
-            'week'                 => $week,
-            'ttsVoice'             => get_option('mfsd_rag_tts_voice', ''),
-            'conversationMode'     => get_option('mfsd_rag_conversation_mode', 'polite'),
-            'textReveal'           => get_option('mfsd_rag_text_reveal', 'block'),
-            'redPlanMode'          => get_option('mfsd_rag_red_plan_mode', 'fixed-50'),
+            'restUrlQuestions'      => esc_url_raw(rest_url('mfsd/v1/questions')),
+            'restUrlAnswer'         => esc_url_raw(rest_url('mfsd/v1/answer')),
+            'restUrlSummary'        => esc_url_raw(rest_url('mfsd/v1/summary')),
+            'restUrlStatus'         => esc_url_raw(rest_url('mfsd/v1/status')),
+            'restUrlPrevious'       => esc_url_raw(rest_url('mfsd/v1/previous-answer')),
+            'restUrlGuidance'       => esc_url_raw(rest_url('mfsd/v1/question-guidance')),
+            'restUrlAllWeeks'       => esc_url_raw(rest_url('mfsd/v1/all-weeks-summary')),
+            'restUrlQuestionChat'   => esc_url_raw(rest_url('mfsd/v1/question-chat')),
+            'restUrlRedSuggestions' => esc_url_raw(rest_url('mfsd/v1/red-suggestions')),
+            'restUrlSaveRedPlan'    => esc_url_raw(rest_url('mfsd/v1/red-plan')),
+            'nonce'                 => wp_create_nonce('wp_rest'),
+            'week'                  => $week,
+            'ttsVoice'              => get_option('mfsd_rag_tts_voice', ''),
+            'conversationMode'      => get_option('mfsd_rag_conversation_mode', 'polite'),
+            'textReveal'            => get_option('mfsd_rag_text_reveal', 'block'),
+            'redPlanMode'           => get_option('mfsd_rag_red_plan_mode', 'fixed-50'),
         ));
         wp_enqueue_script('mfsd-weekly-rag');
         wp_enqueue_style('mfsd-weekly-rag');
@@ -199,16 +196,16 @@ final class MFSD_Weekly_RAG {
     public function register_routes() {
         $std = array($this, 'check_permission');
         $routes = array(
-            array('questions',        'READABLE',  'api_questions'),
-            array('answer',           'CREATABLE', 'api_answer'),
-            array('summary',          'CREATABLE', 'api_summary'),
-            array('status',           'READABLE',  'api_status'),
-            array('previous-answer',  'READABLE',  'api_previous_answer'),
-            array('question-guidance','CREATABLE', 'api_question_guidance'),
-            array('all-weeks-summary','READABLE',  'api_all_weeks_summary'),
-            array('question-chat',    'CREATABLE', 'api_question_chat'),
-            array('red-suggestions',  'CREATABLE', 'api_red_suggestions'),
-            array('red-plan',         'CREATABLE', 'api_save_red_plan'),
+            array('questions',         'READABLE',  'api_questions'),
+            array('answer',            'CREATABLE', 'api_answer'),
+            array('summary',           'CREATABLE', 'api_summary'),
+            array('status',            'READABLE',  'api_status'),
+            array('previous-answer',   'READABLE',  'api_previous_answer'),
+            array('question-guidance', 'CREATABLE', 'api_question_guidance'),
+            array('all-weeks-summary', 'READABLE',  'api_all_weeks_summary'),
+            array('question-chat',     'CREATABLE', 'api_question_chat'),
+            array('red-suggestions',   'CREATABLE', 'api_red_suggestions'),
+            array('red-plan',          'CREATABLE', 'api_save_red_plan'),
         );
         foreach ($routes as $r) {
             register_rest_route('mfsd/v1', '/' . $r[0], array(
@@ -242,7 +239,6 @@ final class MFSD_Weekly_RAG {
         if ($mode === 'fixed-100') return 100;
         if ($mode === 'age-specific') {
             $age = null;
-            // Try UM date_of_birth field
             if (function_exists('um_profile')) {
                 um_profile($user_id);
                 $dob = um_user('date_of_birth');
@@ -253,7 +249,7 @@ final class MFSD_Weekly_RAG {
             if ($age && $age >= 13) return 100;
             return 50;
         }
-        return 50; // fixed-50 default
+        return 50;
     }
 
     // =========================================================================
@@ -312,6 +308,24 @@ final class MFSD_Weekly_RAG {
             $answered_ids=array_map('intval',array_merge($ri?:array(),$mi?:array()));
         }
 
+        // Find Red answers that have no plan saved yet
+        $pending_red_plans = array();
+        if (!empty($answered_ids)) {
+            $a  = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            $rp = $wpdb->prefix . self::TBL_RED_PLANS;
+            $red_qids = $wpdb->get_col($wpdb->prepare(
+                "SELECT DISTINCT question_id FROM $a WHERE user_id=%d AND week_num=%d AND answer='R'",
+                $user_id, $week
+            ));
+            foreach ($red_qids as $qid) {
+                $has_plan = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM $rp WHERE user_id=%d AND week_num=%d AND question_id=%d",
+                    $user_id, $week, (int)$qid
+                ));
+                if (!$has_plan) $pending_red_plans[] = (int)$qid;
+            }
+        }
+
         $previous_week_summary=null; $intro_message=null;
         if ($week>1&&$status==='not_started') {
             $pw=$week-1; $a=$wpdb->prefix.self::TBL_ANSWERS_RAG;
@@ -320,11 +334,21 @@ final class MFSD_Weekly_RAG {
             $pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",$user_id,$pw));
             if ($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0)) {
                 $previous_week_summary=array('week'=>$pw,'reds'=>(int)$pr['reds'],'ambers'=>(int)$pr['ambers'],'greens'=>(int)$pr['greens'],'total_score'=>(int)$pr['total_score'],'mbti_type'=>$pm);
-                if (isset($GLOBALS['mwai'])) { try { $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($user_id):get_userdata($user_id)->display_name; $intro_message=$mwai->simpleTextQuery("Supportive coach to $username (12-14). Last week Week $pw: {$pr['greens']} Greens, {$pr['ambers']} Ambers, {$pr['reds']} Reds".($pm?" MBTI:$pm":"").". Brief warm welcome for Week $week (3-4 sentences, use 'you'/'your')."); } catch(Exception $e){} }
+                if (isset($GLOBALS['mwai'])) { try { $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($user_id):get_userdata($user_id)->display_name; $intro_message=$mwai->simpleTextQuery("You are SteveGPT speaking directly to $username (12-14). Last week Week $pw: {$pr['greens']} Greens, {$pr['ambers']} Ambers, {$pr['reds']} Reds".($pm?" MBTI:$pm":"").". Write a brief warm welcome for Week $week (3-4 sentences). Use 'you'/'your' only. NEVER say 'your child'."); } catch(Exception $e){} }
             }
         }
 
-        return new WP_REST_Response(array('ok'=>true,'status'=>$status,'rag_count'=>(int)$rag_count,'mbti_count'=>(int)$mbti_count,'total_count'=>(int)$total_count,'expected_rag'=>$expected_rag,'expected_mbti'=>$expected_mbti,'expected_total'=>$expected_total,'week'=>$week,'user_id'=>$user_id,'can_start'=>$can_start,'blocking_week'=>$blocking_week,'last_question_id'=>$last_question_id?(int)$last_question_id:null,'answered_question_ids'=>$answered_ids,'previous_week_summary'=>$previous_week_summary,'intro_message'=>$intro_message),200);
+        return new WP_REST_Response(array(
+            'ok'=>true,'status'=>$status,
+            'rag_count'=>(int)$rag_count,'mbti_count'=>(int)$mbti_count,'total_count'=>(int)$total_count,
+            'expected_rag'=>$expected_rag,'expected_mbti'=>$expected_mbti,'expected_total'=>$expected_total,
+            'week'=>$week,'user_id'=>$user_id,'can_start'=>$can_start,'blocking_week'=>$blocking_week,
+            'last_question_id'=>$last_question_id?(int)$last_question_id:null,
+            'answered_question_ids'=>$answered_ids,
+            'pending_red_plans'=>$pending_red_plans,
+            'previous_week_summary'=>$previous_week_summary,
+            'intro_message'=>$intro_message
+        ),200);
     }
 
     private function get_rag_answer_count($u,$w)  { global $wpdb; $t=$wpdb->prefix.self::TBL_ANSWERS_RAG;  return (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t WHERE user_id=%d AND week_num=%d",$u,$w)); }
@@ -338,7 +362,7 @@ final class MFSD_Weekly_RAG {
 
     public function api_previous_answer($req) {
         global $wpdb;
-        $week=$max=max(1,min(6,(int)$req->get_param('week'))); $qid=(int)$req->get_param('question_id'); $uid=$this->get_current_um_user_id();
+        $week=(int)$req->get_param('week'); $qid=(int)$req->get_param('question_id'); $uid=$this->get_current_um_user_id();
         if (!$uid||!$qid||$week<=1) return new WP_REST_Response(array('ok'=>true,'previous'=>array()),200);
         $qt=$wpdb->prefix.self::TBL_QUESTIONS; $q=$wpdb->get_row($wpdb->prepare("SELECT q_type FROM $qt WHERE id=%d",$qid),ARRAY_A);
         if (!$q) return new WP_REST_Response(array('ok'=>true,'previous'=>array()),200);
@@ -371,19 +395,35 @@ final class MFSD_Weekly_RAG {
         }
 
         $guidance='';
-        if (isset($GLOBALS['mwai'])) { try { $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
-            if ($question['q_type']==='MBTI') {
-                $prompt="You are a supportive coach speaking to $username. Question: \"{$question['q_text']}\". Write 2-3 sentences explaining what this MBTI question explores and how to answer (Red=doesn't describe you, Amber=sometimes, Green=describes you well). Address $username as 'you'.";
-            } else {
-                $prompt="You are a supportive coach speaking to $username. Question: \"{$question['q_text']}\". Write 3-4 sentences explaining what to reflect on and how to answer (Red=struggling, Amber=mixed, Green=confident).";
-                if (!empty($previous)) { $prompt.="\nPrevious: "; foreach($previous as $ans) $prompt.="Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." "; }
-                if ($prev_red_plan) {
-                    $prompt .= "\n\nIMPORTANT: Last week (Week {$prev_red_plan['week_num']}), $username made this plan to improve: \"{$prev_red_plan['plan_text']}\". Acknowledge this plan warmly as part of your guidance — did they follow through?";
+        if (isset($GLOBALS['mwai'])) {
+            try {
+                $mwai=$GLOBALS['mwai'];
+                $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
+
+                if ($question['q_type']==='MBTI') {
+                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username, a student aged 12-14 completing their own personality assessment.\n\n";
+                    $prompt .= "CRITICAL: Address $username as 'you'/'your' only. NEVER say 'your child' or refer to them in third person.\n\n";
+                    $prompt .= "Question: \"{$question['q_text']}\"\n\n";
+                    $prompt .= "Write 2-3 sentences explaining what this MBTI question explores and how to answer (Red=doesn't describe you, Amber=sometimes, Green=describes you well). Remind them there are no right or wrong answers.";
+                } else {
+                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username, who is a student aged 12-14 completing their own self-assessment.\n\n";
+                    $prompt .= "CRITICAL RULES:\n";
+                    $prompt .= "- You are talking TO $username, not about them or to their parents\n";
+                    $prompt .= "- NEVER say 'your child', 'they', 'their' or any third-person reference\n";
+                    $prompt .= "- ALWAYS use 'you' and 'your' — e.g. 'you feel' not 'your child feels'\n\n";
+                    $prompt .= "Question: \"{$question['q_text']}\"\n\n";
+                    $prompt .= "Write 3-4 sentences explaining what to reflect on and how to answer (Red=struggling, Amber=mixed, Green=confident).";
+                    if (!empty($previous)) {
+                        $prompt.="\nPrevious answers: "; foreach($previous as $ans) $prompt.="Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." ";
+                        $prompt.="\nAcknowledge their progress, speaking directly to them.";
+                    }
+                    if ($prev_red_plan) {
+                        $prompt .= "\n\nIMPORTANT: Last week (Week {$prev_red_plan['week_num']}), $username made this plan to improve: \"{$prev_red_plan['plan_text']}\". Acknowledge this plan warmly — how did they get on?";
+                    }
                 }
-                $prompt.=" Address $username as 'you'.";
-            }
-            $guidance=$mwai->simpleTextQuery($prompt);
-        } catch(Exception $e){ error_log('MFSD RAG guidance: '.$e->getMessage()); } }
+                $guidance=$mwai->simpleTextQuery($prompt);
+            } catch(Exception $e){ error_log('MFSD RAG guidance: '.$e->getMessage()); }
+        }
 
         return new WP_REST_Response(array('ok'=>true,'guidance'=>$guidance,'question'=>$question['q_text'],'type'=>$question['q_type']),200);
     }
@@ -424,120 +464,60 @@ final class MFSD_Weekly_RAG {
         return new WP_REST_Response(array('ok'=>true,'message'=>'Saved','answer_id'=>$wpdb->insert_id),200);
     }
 
-    // =========================================================================
-    // NEW: api_red_suggestions — AI intro, suggestions, and previous plan
-    // =========================================================================
-
     public function api_red_suggestions($req) {
         global $wpdb;
         $week        = max(1, min(6, (int)$req->get_param('week')));
         $question_id = (int)$req->get_param('question_id');
         $user_id     = $this->get_current_um_user_id();
+        if (!$user_id||!$question_id) return new WP_REST_Response(array('ok'=>false,'error'=>'Invalid request'),400);
+        $qt=$wpdb->prefix.self::TBL_QUESTIONS; $question=$wpdb->get_row($wpdb->prepare("SELECT * FROM $qt WHERE id=%d",$question_id),ARRAY_A);
+        if (!$question) return new WP_REST_Response(array('ok'=>false,'error'=>'Question not found'),404);
 
-        if (!$user_id || !$question_id) return new WP_REST_Response(array('ok'=>false,'error'=>'Invalid request'), 400);
+        $rp         = $wpdb->prefix.self::TBL_RED_PLANS;
+        $prev_plans = $wpdb->get_results($wpdb->prepare("SELECT week_num,plan_text FROM $rp WHERE user_id=%d AND question_id=%d AND week_num<%d ORDER BY week_num DESC LIMIT 3",$user_id,$question_id,$week),ARRAY_A);
 
-        $qt       = $wpdb->prefix . self::TBL_QUESTIONS;
-        $question = $wpdb->get_row($wpdb->prepare("SELECT * FROM $qt WHERE id=%d", $question_id), ARRAY_A);
-        if (!$question) return new WP_REST_Response(array('ok'=>false,'error'=>'Question not found'), 404);
-
-        // Previous red plans for this question (most recent first)
-        $rp           = $wpdb->prefix . self::TBL_RED_PLANS;
-        $prev_plans   = $wpdb->get_results($wpdb->prepare(
-            "SELECT week_num, plan_text FROM $rp WHERE user_id=%d AND question_id=%d AND week_num < %d ORDER BY week_num DESC LIMIT 3",
-            $user_id, $question_id, $week
-        ), ARRAY_A);
-
-        // Previous answer for this question last week (to detect Red→Red vs first Red)
         $prev_answer = null;
         if ($week > 1) {
-            $a           = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-            $prev_answer = $wpdb->get_var($wpdb->prepare(
-                "SELECT answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num=%d LIMIT 1",
-                $user_id, $question_id, $week - 1
-            ));
+            $a = $wpdb->prefix.self::TBL_ANSWERS_RAG;
+            $prev_answer = $wpdb->get_var($wpdb->prepare("SELECT answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num=%d LIMIT 1",$user_id,$question_id,$week-1));
         }
 
-        $word_target  = $this->get_red_plan_word_target($user_id);
-        $steve_intro  = '';
-        $suggestions  = array();
+        $word_target = $this->get_red_plan_word_target($user_id);
+        $steve_intro = ''; $suggestions = array();
 
         if (isset($GLOBALS['mwai'])) {
             try {
-                $mwai     = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
-
+                $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($user_id):get_userdata($user_id)->display_name;
                 $prompt  = "You are SteveGPT, a supportive AI coach for $username (aged 12-14) on their High Performance Pathway.\n\n";
                 $prompt .= "They just answered RED to: \"{$question['q_text']}\"\n\n";
-
                 $last_plan = !empty($prev_plans) ? $prev_plans[0] : null;
-
-                if ($last_plan && $prev_answer === 'R') {
-                    // Red again after having made a plan — plan didn't work
-                    $prompt .= "CONTEXT: Last week (Week {$last_plan['week_num']}) they made this plan:\n\"{$last_plan['plan_text']}\"\nHowever they have answered Red again this week, suggesting the plan didn't fully work.\n\n";
-                    $prompt .= "Write a warm intro (2-3 sentences) that:\n";
-                    $prompt .= "1. Acknowledges they tried last week and that this is okay\n";
-                    $prompt .= "2. Gently asks them to think about what got in the way\n";
-                    $prompt .= "3. Sets up that you'll help them build a better plan this time\n\n";
-                } elseif ($last_plan && $prev_answer !== 'R') {
-                    // They improved but are back to Red — possible regression
-                    $prompt .= "CONTEXT: They had improved previously but have returned to Red this week.\n\n";
-                    $prompt .= "Write a warm intro (2-3 sentences) acknowledging this might be a tough week and that's okay, and encouraging them to make a plan.\n\n";
+                if ($last_plan && $prev_answer==='R') {
+                    $prompt .= "CONTEXT: Last week (Week {$last_plan['week_num']}) they made this plan:\n\"{$last_plan['plan_text']}\"\nHowever they have answered Red again. Write a warm intro (2-3 sentences) acknowledging they tried, gently asking what got in the way, and setting up a better plan this time.\n\n";
+                } elseif ($last_plan && $prev_answer!=='R') {
+                    $prompt .= "CONTEXT: They had improved previously but returned to Red. Write a warm intro (2-3 sentences) acknowledging this can happen and encouraging them to make a plan.\n\n";
                 } else {
-                    // First Red on this question
-                    $prompt .= "Write a warm intro (2-3 sentences) that:\n";
-                    $prompt .= "1. Thanks them for being honest — a Red means they're self-aware\n";
-                    $prompt .= "2. Explains that this is the first step to improving\n";
-                    $prompt .= "3. Sets up that you'll suggest some ideas to help\n\n";
+                    $prompt .= "Write a warm intro (2-3 sentences): thank them for being honest, say a Red means they're self-aware, set up that you'll suggest ideas.\n\n";
                 }
-
-                $prompt .= "Then give exactly 3 practical, specific suggestions to help them improve this area by next week.\n";
+                $prompt .= "Then give exactly 3 practical suggestions to help them improve by next week.\n";
                 $prompt .= "Format EXACTLY as:\nINTRO: [intro text]\nSUGGESTION_1: [suggestion]\nSUGGESTION_2: [suggestion]\nSUGGESTION_3: [suggestion]\n\n";
                 $prompt .= "Each suggestion 1-2 sentences, practical, age-appropriate. Address $username as 'you'. No asterisks or markdown.";
-
                 $response = $mwai->simpleTextQuery($prompt);
-
-                // Parse structured response
-                foreach (explode("\n", $response) as $line) {
-                    $line = trim($line);
-                    if (strpos($line, 'INTRO:') === 0) {
-                        $steve_intro = trim(substr($line, 6));
-                    } elseif (preg_match('/^SUGGESTION_\d+:\s*(.+)/', $line, $m)) {
-                        $suggestions[] = trim($m[1]);
-                    }
+                foreach (explode("\n",$response) as $line) {
+                    $line=trim($line);
+                    if (strpos($line,'INTRO:')===0) $steve_intro=trim(substr($line,6));
+                    elseif (preg_match('/^SUGGESTION_\d+:\s*(.+)/',$line,$m)) $suggestions[]=trim($m[1]);
                 }
-
-                if (!$steve_intro) $steve_intro = "Thanks for being honest — a Red means you know where to grow! Let's make a plan together.";
-                if (empty($suggestions)) $suggestions = array(
-                    "Try practising this skill for just 5 minutes each day this week.",
-                    "Talk to someone you trust about this — a friend, parent, or teacher.",
-                    "Set one small, specific goal for this week that you can actually measure."
-                );
-
-            } catch (Exception $e) {
-                error_log('MFSD RAG red suggestions: ' . $e->getMessage());
-                $steve_intro = "Thanks for being honest. Let's build a plan to move this forward!";
-                $suggestions = array(
-                    "Try a small daily practice related to this question.",
-                    "Ask someone you trust for advice or support.",
-                    "Set one specific goal you can achieve by next week."
-                );
+                if (!$steve_intro) $steve_intro="Thanks for being honest — a Red means you know where to grow! Let's make a plan together.";
+                if (empty($suggestions)) $suggestions=array("Try practising this skill for just 5 minutes each day this week.","Talk to someone you trust about this.","Set one small, specific goal for this week that you can actually measure.");
+            } catch(Exception $e) {
+                error_log('MFSD RAG red suggestions: '.$e->getMessage());
+                $steve_intro="Thanks for being honest. Let's build a plan to move this forward!";
+                $suggestions=array("Try a small daily practice related to this question.","Ask someone you trust for advice or support.","Set one specific goal you can achieve by next week.");
             }
         }
 
-        return new WP_REST_Response(array(
-            'ok'           => true,
-            'steve_intro'  => $steve_intro,
-            'suggestions'  => $suggestions,
-            'prev_plans'   => $prev_plans,
-            'prev_answer'  => $prev_answer,
-            'word_target'  => $word_target,
-            'question'     => $question['q_text'],
-        ), 200);
+        return new WP_REST_Response(array('ok'=>true,'steve_intro'=>$steve_intro,'suggestions'=>$suggestions,'prev_plans'=>$prev_plans,'prev_answer'=>$prev_answer,'word_target'=>$word_target,'question'=>$question['q_text']),200);
     }
-
-    // =========================================================================
-    // NEW: api_save_red_plan — persist the student's improvement plan
-    // =========================================================================
 
     public function api_save_red_plan($req) {
         global $wpdb;
@@ -545,26 +525,12 @@ final class MFSD_Weekly_RAG {
         $question_id = (int)$req->get_param('question_id');
         $plan_text   = sanitize_textarea_field($req->get_param('plan_text'));
         $user_id     = $this->get_current_um_user_id();
-
-        if (!$user_id || !$question_id || !$plan_text) return new WP_REST_Response(array('ok'=>false,'error'=>'Invalid request'), 400);
-
+        if (!$user_id||!$question_id||!$plan_text) return new WP_REST_Response(array('ok'=>false,'error'=>'Invalid request'),400);
         $word_count = str_word_count(strip_tags($plan_text));
-        $rp         = $wpdb->prefix . self::TBL_RED_PLANS;
-
-        $wpdb->replace($rp, array(
-            'user_id'     => $user_id,
-            'week_num'    => $week,
-            'question_id' => $question_id,
-            'plan_text'   => $plan_text,
-            'word_count'  => $word_count,
-        ), array('%d','%d','%d','%s','%d'));
-
-        return new WP_REST_Response(array('ok'=>true,'word_count'=>$word_count), 200);
+        $rp=$wpdb->prefix.self::TBL_RED_PLANS;
+        $wpdb->replace($rp,array('user_id'=>$user_id,'week_num'=>$week,'question_id'=>$question_id,'plan_text'=>$plan_text,'word_count'=>$word_count),array('%d','%d','%d','%s','%d'));
+        return new WP_REST_Response(array('ok'=>true,'word_count'=>$word_count),200);
     }
-
-    // =========================================================================
-    // api_question_chat — supports red follow-up context via is_red_followup flag
-    // =========================================================================
 
     public function api_question_chat($req) {
         global $wpdb;
@@ -573,56 +539,41 @@ final class MFSD_Weekly_RAG {
         $msg             = sanitize_text_field($req->get_param('message'));
         $is_red_followup = (bool)$req->get_param('is_red_followup');
         $uid             = $this->get_current_um_user_id();
-
         if (!$uid||!$question_id||!$msg) return new WP_REST_Response(array('ok'=>false,'error'=>'Invalid request'),400);
-
         $qt=$wpdb->prefix.self::TBL_QUESTIONS; $q=$wpdb->get_row($wpdb->prepare("SELECT * FROM $qt WHERE id=%d",$question_id),ARRAY_A);
         if (!$q) return new WP_REST_Response(array('ok'=>false,'error'=>'Question not found'),404);
-
         $prev=array(); if($week>1&&$q['q_type']==='RAG'){$a=$wpdb->prefix.self::TBL_ANSWERS_RAG;$prev=$wpdb->get_results($wpdb->prepare("SELECT week_num,answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num<%d ORDER BY week_num ASC",$uid,$question_id,$week),ARRAY_A);}
-
         $resp='';
         if (isset($GLOBALS['mwai'])){try{
-            $mwai=$GLOBALS['mwai'];
-            $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
-
+            $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
             if ($is_red_followup) {
-                // Red follow-up context — help student think about their plan
-                $p  = "You are SteveGPT, a supportive AI coach for $username (12-14) on their High Performance Pathway.\n";
+                $p  = "You are SteveGPT, a supportive AI coach for $username (12-14).\n";
                 $p .= "They answered RED to: \"{$q['q_text']}\"\n";
-                $p .= "They are working on a plan to improve this to Amber by next week.\n";
-                $p .= "Your role: give practical, encouraging suggestions. Keep responses to 2-3 sentences.\n";
-                $p .= "Address $username as 'you'. No asterisks. No markdown.\n\n";
-                $p .= "Student: $msg";
+                $p .= "They are working on a plan to improve to Amber. Give practical, encouraging suggestions.\n";
+                $p .= "Address $username as 'you'. NEVER say 'your child'. 2-3 sentences.\n\nStudent: $msg";
             } else {
-                $p  = "Supportive AI coach for $username (12-14), Week $week, High Performance Pathway.\n";
+                $p  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username (12-14), Week $week, High Performance Pathway.\n";
+                $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child' or third person.\n";
                 $p .= "Question: \"{$q['q_text']}\"\n";
                 if($q['q_type']==='MBTI') $p.="MBTI question (Red=doesn't describe you, Amber=sometimes, Green=describes you well).\n";
-                else { $p.="RAG question (Red=struggling, Amber=mixed, Green=confident).\n"; if(!empty($prev)){$p.="Previous: ";foreach($prev as $pa)$p.="W{$pa['week_num']}:".($pa['answer']==='R'?'R':($pa['answer']==='A'?'A':'G'))." ";} }
-                $p.="2-3 sentences, warm, use 'you'/'your'.\n\nStudent: $msg";
+                else{$p.="RAG question (Red=struggling, Amber=mixed, Green=confident).\n";if(!empty($prev)){$p.="Previous: ";foreach($prev as $pa)$p.="W{$pa['week_num']}:".($pa['answer']==='R'?'R':($pa['answer']==='A'?'A':'G'))." ";}}
+                $p.="2-3 sentences, warm.\n\nStudent: $msg";
             }
             $resp=$mwai->simpleTextQuery($p);
         }catch(Exception $e){$resp="I'm having trouble connecting right now. Please try again.";}}
         else $resp="AI assistance is currently unavailable.";
-
         return new WP_REST_Response(array('ok'=>true,'response'=>$resp),200);
     }
-
-    // =========================================================================
-    // api_summary — includes red plans in AI context
-    // =========================================================================
 
     public function api_summary($req) {
         global $wpdb;
         $week=$week=max(1,min(6,(int)$req->get_param('week'))); $uid=$this->get_current_um_user_id();
         if (!$uid) return new WP_REST_Response(array('ok'=>false,'error'=>'Not logged in'),403);
-
         $ws=$wpdb->prefix.self::TBL_WEEK_SUMMARIES; $cached=$wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A); $use_cache=(get_option('mfsd_rag_cache_summaries','1')==='1');
         if ($use_cache&&$cached&&!empty($cached['ai_summary'])) {
             $pw=array(); if($week>1){$a=$wpdb->prefix.self::TBL_ANSWERS_RAG;for($w=1;$w<$week;$w++){$pr=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A);$pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",$uid,$w));if($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0))$pw[]=array('week'=>$w,'rag'=>$pr,'mbti'=>$pm);}}
             return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>array('reds'=>(int)$cached['reds'],'ambers'=>(int)$cached['ambers'],'greens'=>(int)$cached['greens'],'total_score'=>(int)$cached['total_score']),'mbti'=>$cached['mbti_type'],'disc_type'=>isset($cached['disc_type'])?$cached['disc_type']:null,'disc_scores'=>null,'ai'=>$cached['ai_summary'],'previous_weeks'=>$pw,'cached'=>true),200);
         }
-
         $a=$wpdb->prefix.self::TBL_ANSWERS_RAG; $agg=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A);
         if (!$agg) $agg=array('reds'=>0,'ambers'=>0,'greens'=>0,'total_score'=>0);
         $mb=$wpdb->prefix.self::TBL_ANSWERS_MB; $letters=$wpdb->get_results($wpdb->prepare("SELECT axis,letter,COUNT(*) c FROM $mb WHERE user_id=%d AND week_num=%d GROUP BY axis,letter",$uid,$week),ARRAY_A); $type=$this->mbti_type_from_counts($letters);
@@ -632,46 +583,35 @@ final class MFSD_Weekly_RAG {
         $mtu=$type; if(!$mtu&&!empty($pw)){foreach(array_reverse($pw) as $p){if(!empty($p['mbti'])){$mtu=$p['mbti'];break;}}}
         $djr=null; $djt=$wpdb->prefix.'mfsd_ai_dream_jobs_results'; if($wpdb->get_var("SHOW TABLES LIKE '$djt'")==$djt){$djd=$wpdb->get_row($wpdb->prepare("SELECT ranking_json FROM $djt WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1",$uid),ARRAY_A);if($djd&&!empty($djd['ranking_json']))$djr=json_decode($djd['ranking_json'],true);}
 
-        // Fetch red plans from previous week and compare to current week answers
         $plan_context = '';
         if ($week > 1) {
-            $rp = $wpdb->prefix . self::TBL_RED_PLANS;
-            $prev_week_plans = $wpdb->get_results($wpdb->prepare(
-                "SELECT rp.question_id, rp.plan_text, rp.week_num, q.q_text FROM $rp rp
-                 JOIN {$wpdb->prefix}" . self::TBL_QUESTIONS . " q ON q.id = rp.question_id
-                 WHERE rp.user_id=%d AND rp.week_num=%d",
-                $uid, $week - 1
-            ), ARRAY_A);
-
+            $rp=$wpdb->prefix.self::TBL_RED_PLANS;
+            $prev_week_plans=$wpdb->get_results($wpdb->prepare("SELECT rp.question_id,rp.plan_text,rp.week_num,q.q_text FROM $rp rp JOIN {$wpdb->prefix}".self::TBL_QUESTIONS." q ON q.id=rp.question_id WHERE rp.user_id=%d AND rp.week_num=%d",$uid,$week-1),ARRAY_A);
             if (!empty($prev_week_plans)) {
-                $plan_context = "\n===RED PLAN FOLLOW-UP===\n";
-                $plan_context .= "Last week the student made improvement plans for questions they rated Red. Here is how they did this week:\n\n";
+                $plan_context="\n===RED PLAN FOLLOW-UP===\nLast week the student made improvement plans for Red questions. Here is how they did this week:\n\n";
                 foreach ($prev_week_plans as $plan) {
-                    $this_week_answer = $wpdb->get_var($wpdb->prepare(
-                        "SELECT answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num=%d LIMIT 1",
-                        $uid, $plan['question_id'], $week
-                    ));
-                    $outcome = 'not yet answered';
-                    if ($this_week_answer === 'G') $outcome = 'improved to GREEN — great success!';
-                    elseif ($this_week_answer === 'A') $outcome = 'improved to AMBER — good progress!';
-                    elseif ($this_week_answer === 'R') $outcome = 'still Red — plan needs revisiting';
-                    $plan_context .= "Question: \"{$plan['q_text']}\"\n";
-                    $plan_context .= "Their plan was: \"{$plan['plan_text']}\"\n";
-                    $plan_context .= "This week: $outcome\n\n";
+                    $twa=$wpdb->get_var($wpdb->prepare("SELECT answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num=%d LIMIT 1",$uid,$plan['question_id'],$week));
+                    $outcome='not yet answered';
+                    if ($twa==='G') $outcome='improved to GREEN — great success!';
+                    elseif ($twa==='A') $outcome='improved to AMBER — good progress!';
+                    elseif ($twa==='R') $outcome='still Red — plan needs revisiting';
+                    $plan_context.="Question: \"{$plan['q_text']}\"\nPlan: \"{$plan['plan_text']}\"\nThis week: $outcome\n\n";
                 }
-                $plan_context .= "In the summary: celebrate improvements warmly (Red→Green = especially praise-worthy), for Red→Amber ask what worked, for Red→Red ask what got in the way and encourage them not to give up.\n";
+                $plan_context.="In the summary: celebrate Red→Green warmly, for Red→Amber ask what worked, for Red→Red ask what got in the way and encourage them.\n";
             }
         }
 
         $aiIntro='';
         if (isset($GLOBALS['mwai'])) { try { $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
-            $p ="You are a supportive coach speaking to $username (aged 12-14) about their High Performance Pathway.\n\nWEEK $week RESULTS:\nRAG: {$agg['reds']}R {$agg['ambers']}A {$agg['greens']}G (Score:{$agg['total_score']})\n";
+            $p ="You are SteveGPT, a supportive coach speaking DIRECTLY TO $username (aged 12-14) about their High Performance Pathway.\n";
+            $p.="CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'.\n\n";
+            $p.="WEEK $week RESULTS:\nRAG: {$agg['reds']}R {$agg['ambers']}A {$agg['greens']}G (Score:{$agg['total_score']})\n";
             if($mtu)$p.="MBTI: $mtu".($type?" (this week)":" (previous weeks)")."\n"; if($disc_type)$p.="DISC: $disc_type — D={$disc_scores['D']['percent']}% I={$disc_scores['I']['percent']}% S={$disc_scores['S']['percent']}% C={$disc_scores['C']['percent']}%\n";
             if(!empty($pw)){$p.="\nPROGRESS:\n";foreach($pw as $wpw)$p.="Week{$wpw['week']}: {$wpw['rag']['reds']}R/{$wpw['rag']['ambers']}A/{$wpw['rag']['greens']}G".($wpw['mbti']?" MBTI:{$wpw['mbti']}":"")."\n";}
             if(!empty($djr)){$p.="\nDREAM JOBS:\n";foreach(array_slice($djr,0,5) as $i=>$j)$p.=($i+1).". $j\n";}
-            $p .= $plan_context;
-            $p .="Write a warm, insightful summary: celebrate strengths, note progress, explain personality, acknowledge development areas, give 2-3 actionable steps.\n";
-            $p .="Use 'you'/'your'. UK context. Bullet points. Apply Steve's Solutions Mindset principles: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
+            $p.=$plan_context;
+            $p.="Write a warm, insightful summary: celebrate strengths, note progress, explain personality, acknowledge development areas, give 2-3 actionable steps.\n";
+            $p.="UK context. Bullet points. Apply Steve's Solutions Mindset: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
             $aiIntro=$mwai->simpleTextQuery($p);
         } catch(Exception $e){error_log('MFSD RAG summary: '.$e->getMessage());} }
 
@@ -732,71 +672,42 @@ final class MFSD_Weekly_RAG {
     }
 
     // =========================================================================
-    // ADMIN — SAVE SETTINGS
+    // ADMIN
     // =========================================================================
 
     public function save_admin_settings() {
         if (!isset($_POST['mfsd_rag_admin_nonce'])) return;
         if (!wp_verify_nonce($_POST['mfsd_rag_admin_nonce'], 'mfsd_rag_admin_save')) return;
         if (!current_user_can('manage_options')) return;
-
         update_option('mfsd_rag_cache_summaries',  isset($_POST['mfsd_rag_cache_summaries']) ? '1' : '0');
         update_option('mfsd_rag_tts_voice',        sanitize_text_field($_POST['mfsd_rag_tts_voice'] ?? ''));
         update_option('mfsd_rag_conversation_mode',in_array($_POST['mfsd_rag_conversation_mode']??'',['polite','normal']) ? $_POST['mfsd_rag_conversation_mode'] : 'polite');
-        $reveal = $_POST['mfsd_rag_text_reveal'] ?? 'block';
-        update_option('mfsd_rag_text_reveal',       in_array($reveal,['block','sentence','word']) ? $reveal : 'block');
-        $rpm = $_POST['mfsd_rag_red_plan_mode'] ?? 'fixed-50';
-        update_option('mfsd_rag_red_plan_mode',     in_array($rpm,['fixed-50','fixed-100','age-specific']) ? $rpm : 'fixed-50');
-
+        $reveal=$_POST['mfsd_rag_text_reveal']??'block'; update_option('mfsd_rag_text_reveal',in_array($reveal,['block','sentence','word'])?$reveal:'block');
+        $rpm=$_POST['mfsd_rag_red_plan_mode']??'fixed-50'; update_option('mfsd_rag_red_plan_mode',in_array($rpm,['fixed-50','fixed-100','age-specific'])?$rpm:'fixed-50');
         if (isset($_POST['mfsd_rag_question_weeks'])) {
-            global $wpdb;
-            $q_table = $wpdb->prefix . self::TBL_QUESTIONS;
-            $all_ids = $wpdb->get_col("SELECT id FROM $q_table");
-            foreach ($all_ids as $qid) {
-                $qid   = (int)$qid;
-                $weeks = $_POST['mfsd_rag_question_weeks'][$qid] ?? [];
-                $wpdb->update($q_table,['w1'=>in_array(1,array_map('intval',$weeks))?1:0,'w2'=>in_array(2,array_map('intval',$weeks))?1:0,'w3'=>in_array(3,array_map('intval',$weeks))?1:0,'w4'=>in_array(4,array_map('intval',$weeks))?1:0,'w5'=>in_array(5,array_map('intval',$weeks))?1:0,'w6'=>in_array(6,array_map('intval',$weeks))?1:0],['id'=>$qid],['%d','%d','%d','%d','%d','%d'],['%d']);
-            }
+            global $wpdb; $q_table=$wpdb->prefix.self::TBL_QUESTIONS; $all_ids=$wpdb->get_col("SELECT id FROM $q_table");
+            foreach ($all_ids as $qid) { $qid=(int)$qid; $weeks=$_POST['mfsd_rag_question_weeks'][$qid]??[]; $wpdb->update($q_table,['w1'=>in_array(1,array_map('intval',$weeks))?1:0,'w2'=>in_array(2,array_map('intval',$weeks))?1:0,'w3'=>in_array(3,array_map('intval',$weeks))?1:0,'w4'=>in_array(4,array_map('intval',$weeks))?1:0,'w5'=>in_array(5,array_map('intval',$weeks))?1:0,'w6'=>in_array(6,array_map('intval',$weeks))?1:0],['id'=>$qid],['%d','%d','%d','%d','%d','%d'],['%d']); }
         }
-
-        add_action('admin_notices', function() {
-            echo '<div class="notice notice-success is-dismissible"><p><strong>MFSD RAG settings saved.</strong></p></div>';
-        });
+        add_action('admin_notices', function() { echo '<div class="notice notice-success is-dismissible"><p><strong>MFSD RAG settings saved.</strong></p></div>'; });
     }
-
-    // =========================================================================
-    // ADMIN — QUESTION CRUD
-    // =========================================================================
 
     public function handle_question_actions() {
         if (!isset($_POST['mfsd_rag_question_action'])) return;
-        if (!wp_verify_nonce($_POST['mfsd_rag_question_nonce']??'', 'mfsd_rag_question_crud')) return;
+        if (!wp_verify_nonce($_POST['mfsd_rag_question_nonce']??'','mfsd_rag_question_crud')) return;
         if (!current_user_can('manage_options')) return;
-
-        global $wpdb;
-        $q_table = $wpdb->prefix . self::TBL_QUESTIONS;
-        $action  = sanitize_text_field($_POST['mfsd_rag_question_action']);
-        $qtype   = sanitize_text_field($_POST['qtype'] ?? 'RAG');
-        $base    = add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>$qtype], admin_url('admin.php'));
-
-        if ($action === 'delete') {
-            $wpdb->delete($q_table, ['id'=>(int)$_POST['question_id']], ['%d']);
-            wp_redirect(add_query_arg('msg','deleted',$base)); exit;
-        }
-        if ($action === 'add' || $action === 'edit') {
-            $data = ['q_order'=>(int)($_POST['q_order']??0),'q_type'=>sanitize_text_field($_POST['q_type']??'RAG'),'q_text'=>sanitize_textarea_field($_POST['q_text']??''),'w1'=>isset($_POST['w1'])?1:0,'w2'=>isset($_POST['w2'])?1:0,'w3'=>isset($_POST['w3'])?1:0,'w4'=>isset($_POST['w4'])?1:0,'w5'=>isset($_POST['w5'])?1:0,'w6'=>isset($_POST['w6'])?1:0];
-            $fmt  = ['%d','%s','%s','%d','%d','%d','%d','%d','%d'];
-            if ($data['q_type']==='RAG') { $data['red_score']=(int)($_POST['red_score']??0); $data['amber_score']=(int)($_POST['amber_score']??0); $data['green_score']=(int)($_POST['green_score']??0); array_push($fmt,'%d','%d','%d'); }
-            if ($data['q_type']==='DISC') { $data['disc_mapping']=json_encode(['D'=>(float)($_POST['disc_d']??0),'I'=>(float)($_POST['disc_i']??0),'S'=>(float)($_POST['disc_s']??0),'C'=>(float)($_POST['disc_c']??0)]); $fmt[]='%s'; }
+        global $wpdb; $q_table=$wpdb->prefix.self::TBL_QUESTIONS; $action=sanitize_text_field($_POST['mfsd_rag_question_action']); $qtype=sanitize_text_field($_POST['qtype']??'RAG');
+        $base=add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>$qtype],admin_url('admin.php'));
+        if ($action==='delete') { $wpdb->delete($q_table,['id'=>(int)$_POST['question_id']],['%d']); wp_redirect(add_query_arg('msg','deleted',$base)); exit; }
+        if ($action==='add'||$action==='edit') {
+            $data=['q_order'=>(int)($_POST['q_order']??0),'q_type'=>sanitize_text_field($_POST['q_type']??'RAG'),'q_text'=>sanitize_textarea_field($_POST['q_text']??''),'w1'=>isset($_POST['w1'])?1:0,'w2'=>isset($_POST['w2'])?1:0,'w3'=>isset($_POST['w3'])?1:0,'w4'=>isset($_POST['w4'])?1:0,'w5'=>isset($_POST['w5'])?1:0,'w6'=>isset($_POST['w6'])?1:0];
+            $fmt=['%d','%s','%s','%d','%d','%d','%d','%d','%d'];
+            if ($data['q_type']==='RAG'){$data['red_score']=(int)($_POST['red_score']??0);$data['amber_score']=(int)($_POST['amber_score']??0);$data['green_score']=(int)($_POST['green_score']??0);array_push($fmt,'%d','%d','%d');}
+            if ($data['q_type']==='DISC'){$data['disc_mapping']=json_encode(['D'=>(float)($_POST['disc_d']??0),'I'=>(float)($_POST['disc_i']??0),'S'=>(float)($_POST['disc_s']??0),'C'=>(float)($_POST['disc_c']??0)]);$fmt[]='%s';}
             if ($action==='add') $wpdb->insert($q_table,$data,$fmt);
             else $wpdb->update($q_table,$data,['id'=>(int)$_POST['question_id']],$fmt,['%d']);
             wp_redirect(add_query_arg('msg',$action==='add'?'added':'updated',$base)); exit;
         }
     }
-
-    // =========================================================================
-    // ADMIN — MENU + PAGE
-    // =========================================================================
 
     public function admin_menu() {
         add_menu_page('MFSD RAG','MFSD RAG','manage_options','mfsd-rag',array($this,'admin_page'),'dashicons-forms',66);
@@ -804,160 +715,93 @@ final class MFSD_Weekly_RAG {
 
     public function admin_page() {
         global $wpdb;
-        $active_tab   = isset($_GET['tab'])   ? sanitize_text_field($_GET['tab'])   : 'settings';
-        $active_qtype = isset($_GET['qtype']) ? sanitize_text_field($_GET['qtype']) : 'RAG';
-        $msg          = $_GET['msg'] ?? '';
-        $cache_on     = get_option('mfsd_rag_cache_summaries','1')==='1';
-        $tts_voice    = get_option('mfsd_rag_tts_voice','');
-        $conv_mode    = get_option('mfsd_rag_conversation_mode','polite');
-        $text_reveal  = get_option('mfsd_rag_text_reveal','block');
-        $red_plan_mode= get_option('mfsd_rag_red_plan_mode','fixed-50');
-        $reset_url    = esc_url_raw(rest_url('mfsd/v1/admin-reset-week'));
-        $nonce_rest   = wp_create_nonce('wp_rest');
-        $users        = get_users(['orderby'=>'display_name','order'=>'ASC','number'=>500]);
-        $q_table      = $wpdb->prefix . self::TBL_QUESTIONS;
-        $questions_all= $wpdb->get_results("SELECT * FROM $q_table ORDER BY q_type ASC, q_order ASC", ARRAY_A);
-        $q_by_type    = ['RAG'=>[],'MBTI'=>[],'DISC'=>[]];
-        foreach ($questions_all as $q) { $t=$q['q_type']; if(isset($q_by_type[$t]))$q_by_type[$t][]=$q; }
+        $active_tab=$_GET['tab']??'settings'; $active_qtype=$_GET['qtype']??'RAG'; $msg=$_GET['msg']??'';
+        $cache_on=get_option('mfsd_rag_cache_summaries','1')==='1'; $tts_voice=get_option('mfsd_rag_tts_voice',''); $conv_mode=get_option('mfsd_rag_conversation_mode','polite'); $text_reveal=get_option('mfsd_rag_text_reveal','block'); $red_plan_mode=get_option('mfsd_rag_red_plan_mode','fixed-50');
+        $reset_url=esc_url_raw(rest_url('mfsd/v1/admin-reset-week')); $nonce_rest=wp_create_nonce('wp_rest'); $users=get_users(['orderby'=>'display_name','order'=>'ASC','number'=>500]);
+        $q_table=$wpdb->prefix.self::TBL_QUESTIONS; $questions_all=$wpdb->get_results("SELECT * FROM $q_table ORDER BY q_type ASC, q_order ASC",ARRAY_A); $q_by_type=['RAG'=>[],'MBTI'=>[],'DISC'=>[]]; foreach($questions_all as $q){$t=$q['q_type'];if(isset($q_by_type[$t]))$q_by_type[$t][]=$q;}
         ?>
-        <div class="wrap">
-        <h1>🎯 MFSD Weekly RAG — Admin</h1>
-        <?php if ($msg): ?><div class="notice notice-success is-dismissible"><p><?php echo $msg==='deleted'?'Question deleted.':($msg==='added'?'Question added.':'Question updated.'); ?></p></div><?php endif; ?>
-
+        <div class="wrap"><h1>🎯 MFSD Weekly RAG — Admin</h1>
+        <?php if($msg):?><div class="notice notice-success is-dismissible"><p><?php echo $msg==='deleted'?'Question deleted.':($msg==='added'?'Question added.':'Question updated.');?></p></div><?php endif;?>
         <nav class="nav-tab-wrapper" style="margin-bottom:20px;">
-            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'settings'],admin_url('admin.php'))); ?>" class="nav-tab <?php echo $active_tab==='settings'?'nav-tab-active':''; ?>">⚙️ Settings</a>
-            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>'RAG'],admin_url('admin.php'))); ?>" class="nav-tab <?php echo $active_tab==='questions'?'nav-tab-active':''; ?>">📋 Questions</a>
-            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'reset'],admin_url('admin.php'))); ?>" class="nav-tab <?php echo $active_tab==='reset'?'nav-tab-active':''; ?>">🔄 Student Reset</a>
+            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'settings'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='settings'?'nav-tab-active':'';?>">⚙️ Settings</a>
+            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>'RAG'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='questions'?'nav-tab-active':'';?>">📋 Questions</a>
+            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'reset'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='reset'?'nav-tab-active':'';?>">🔄 Student Reset</a>
         </nav>
-
-        <?php if ($active_tab === 'settings'): ?>
-        <form method="post" action="">
-            <?php wp_nonce_field('mfsd_rag_admin_save','mfsd_rag_admin_nonce'); ?>
-
+        <?php if($active_tab==='settings'):?>
+        <form method="post" action=""><?php wp_nonce_field('mfsd_rag_admin_save','mfsd_rag_admin_nonce');?>
             <h2 class="title">📋 Summary Settings</h2>
-            <table class="form-table"><tr><th>Summary Caching</th><td>
-                <label><input type="checkbox" name="mfsd_rag_cache_summaries" value="1" <?php checked($cache_on); ?>> <strong>Save &amp; reuse AI summaries</strong></label>
-                <p class="description">Checked = save and reuse. Unchecked = regenerate each time (testing).</p>
-            </td></tr></table>
-
+            <table class="form-table"><tr><th>Summary Caching</th><td><label><input type="checkbox" name="mfsd_rag_cache_summaries" value="1" <?php checked($cache_on);?>> <strong>Save &amp; reuse AI summaries</strong></label><p class="description">Checked = save and reuse. Unchecked = regenerate each time.</p></td></tr></table>
             <h2 class="title">🎙 Voice Settings</h2>
             <table class="form-table"><tr><th><label for="mfsd_rag_tts_voice">Preferred TTS Voice</label></th><td>
-                <input type="text" id="mfsd_rag_tts_voice" name="mfsd_rag_tts_voice" value="<?php echo esc_attr($tts_voice); ?>" class="regular-text" placeholder="e.g. Google UK English Female">
-                <p class="description">Use the Voice Browser below to copy voice names.</p>
-                <div style="margin-top:12px;padding:16px;background:#f6f7f7;border:1px solid #ddd;border-radius:6px;max-width:620px;">
-                    <strong>🔍 Available voices on this browser:</strong>
-                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">
-                        <select id="mfsd-voice-preview-select" style="flex:1;min-width:260px;padding:6px;"><option value="">— loading —</option></select>
-                        <button type="button" id="mfsd-voice-preview-btn" class="button button-secondary">▶ Preview</button>
-                        <button type="button" id="mfsd-voice-use-btn" class="button button-primary">✔ Use this voice</button>
-                    </div>
-                    <p id="mfsd-voice-copied" style="display:none;color:green;margin:8px 0 0;font-weight:600;">✔ Copied!</p>
-                </div>
+                <input type="text" id="mfsd_rag_tts_voice" name="mfsd_rag_tts_voice" value="<?php echo esc_attr($tts_voice);?>" class="regular-text" placeholder="e.g. Google UK English Female">
+                <div style="margin-top:12px;padding:16px;background:#f6f7f7;border:1px solid #ddd;border-radius:6px;max-width:620px;"><strong>🔍 Available voices:</strong><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;"><select id="mfsd-voice-preview-select" style="flex:1;min-width:260px;padding:6px;"><option value="">— loading —</option></select><button type="button" id="mfsd-voice-preview-btn" class="button button-secondary">▶ Preview</button><button type="button" id="mfsd-voice-use-btn" class="button button-primary">✔ Use this voice</button></div><p id="mfsd-voice-copied" style="display:none;color:green;margin:8px 0 0;font-weight:600;">✔ Copied!</p></div>
             </td></tr></table>
-
             <h2 class="title">📝 AI Text Reveal Style</h2>
             <table class="form-table"><tr><th>How AI text appears</th><td><fieldset>
-                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_text_reveal" value="block" <?php checked($text_reveal,'block'); ?>> <strong>Whole block</strong> — full answer appears immediately.</label>
-                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_text_reveal" value="sentence" <?php checked($text_reveal,'sentence'); ?>> <strong>Sentence by sentence</strong></label>
-                <label style="display:block;"><input type="radio" name="mfsd_rag_text_reveal" value="word" <?php checked($text_reveal,'word'); ?>> <strong>Word by word</strong></label>
+                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_text_reveal" value="block" <?php checked($text_reveal,'block');?>> <strong>Whole block</strong></label>
+                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_text_reveal" value="sentence" <?php checked($text_reveal,'sentence');?>> <strong>Sentence by sentence</strong></label>
+                <label style="display:block;"><input type="radio" name="mfsd_rag_text_reveal" value="word" <?php checked($text_reveal,'word');?>> <strong>Word by word</strong></label>
             </fieldset></td></tr></table>
-
             <h2 class="title">🗣 Conversation Mode</h2>
             <table class="form-table"><tr><th>Mic behaviour during AI reply</th><td><fieldset>
-                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_conversation_mode" value="polite" <?php checked($conv_mode,'polite'); ?>> <strong>Polite mode</strong> — mic off while AI speaks, restarts when done.</label>
-                <label style="display:block;"><input type="radio" name="mfsd_rag_conversation_mode" value="normal" <?php checked($conv_mode,'normal'); ?>> <strong>Normal mode</strong> — mic stays open; speaking interrupts the AI.</label>
+                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_conversation_mode" value="polite" <?php checked($conv_mode,'polite');?>> <strong>Polite mode</strong> — mic off while AI speaks.</label>
+                <label style="display:block;"><input type="radio" name="mfsd_rag_conversation_mode" value="normal" <?php checked($conv_mode,'normal');?>> <strong>Normal mode</strong> — mic stays open; speaking interrupts AI.</label>
             </fieldset></td></tr></table>
-
             <h2 class="title">🔴 Red Plan Word Target</h2>
             <table class="form-table"><tr><th>Words required for Red plans</th><td><fieldset>
-                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_red_plan_mode" value="fixed-50" <?php checked($red_plan_mode,'fixed-50'); ?>> <strong>Fixed 50 words</strong> — applies to all students.</label>
-                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_red_plan_mode" value="fixed-100" <?php checked($red_plan_mode,'fixed-100'); ?>> <strong>Fixed 100 words</strong> — applies to all students.</label>
-                <label style="display:block;"><input type="radio" name="mfsd_rag_red_plan_mode" value="age-specific" <?php checked($red_plan_mode,'age-specific'); ?>> <strong>Age-specific</strong> — 50 words for ages 11–12, 100 words for ages 13–14 (requires date of birth in UM profile).</label>
-            </fieldset><p class="description" style="margin-top:8px;">When a student answers Red to a RAG question, they must write an improvement plan of at least this many words before continuing.</p>
-            </td></tr></table>
-
-            <?php submit_button('Save Settings'); ?>
+                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_red_plan_mode" value="fixed-50" <?php checked($red_plan_mode,'fixed-50');?>> <strong>Fixed 50 words</strong> — all students.</label>
+                <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_red_plan_mode" value="fixed-100" <?php checked($red_plan_mode,'fixed-100');?>> <strong>Fixed 100 words</strong> — all students.</label>
+                <label style="display:block;"><input type="radio" name="mfsd_rag_red_plan_mode" value="age-specific" <?php checked($red_plan_mode,'age-specific');?>> <strong>Age-specific</strong> — 50 words ages 11–12, 100 words ages 13–14 (requires DOB in UM profile).</label>
+            </fieldset></td></tr></table>
+            <?php submit_button('Save Settings');?>
         </form>
-
-        <?php elseif ($active_tab === 'questions'): ?>
-        <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid #ccd0d4;padding-bottom:0;">
-            <?php foreach (['RAG','MBTI','DISC'] as $type): ?>
-                <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>$type],admin_url('admin.php'))); ?>"
-                   style="padding:8px 18px;border:1px solid #ccd0d4;border-bottom:<?php echo $active_qtype===$type?'2px solid #fff':'1px solid #ccd0d4'; ?>;border-radius:4px 4px 0 0;background:<?php echo $active_qtype===$type?'#fff':'#f0f0f1'; ?>;text-decoration:none;font-weight:<?php echo $active_qtype===$type?'600':'400'; ?>;color:<?php echo $active_qtype===$type?'#1d2327':'#50575e'; ?>;margin-bottom:-1px;">
-                    <?php echo $type; ?> <span style="background:#ddd;border-radius:10px;padding:1px 7px;font-size:12px;"><?php echo count($q_by_type[$type]); ?></span>
-                </a>
-            <?php endforeach; ?>
+        <?php elseif($active_tab==='questions'):?>
+        <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid #ccd0d4;">
+            <?php foreach(['RAG','MBTI','DISC'] as $type):?>
+            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>$type],admin_url('admin.php')));?>" style="padding:8px 18px;border:1px solid #ccd0d4;border-bottom:<?php echo $active_qtype===$type?'2px solid #fff':'1px solid #ccd0d4';?>;border-radius:4px 4px 0 0;background:<?php echo $active_qtype===$type?'#fff':'#f0f0f1';?>;text-decoration:none;font-weight:<?php echo $active_qtype===$type?'600':'400';?>;color:<?php echo $active_qtype===$type?'#1d2327':'#50575e';?>;margin-bottom:-1px;">
+                <?php echo $type;?> <span style="background:#ddd;border-radius:10px;padding:1px 7px;font-size:12px;"><?php echo count($q_by_type[$type]);?></span>
+            </a>
+            <?php endforeach;?>
         </div>
-
-        <?php $current_questions=$q_by_type[$active_qtype]; ?>
-        <form method="post" action="" id="mfsd-week-config-form">
-            <?php wp_nonce_field('mfsd_rag_admin_save','mfsd_rag_admin_nonce'); ?>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <h3 style="margin:0;"><?php echo $active_qtype; ?> Questions (<?php echo count($current_questions); ?>)</h3>
-                <button type="button" id="mfsd-show-add-form" class="button button-primary">+ Add New <?php echo $active_qtype; ?> Question</button>
-            </div>
-            <table class="widefat striped" style="margin-bottom:16px;">
-                <thead><tr>
-                    <th style="width:35px;">#</th><th>Question</th>
-                    <?php if($active_qtype==='RAG'):?><th style="width:100px;text-align:center;">R/A/G scores</th><?php endif;?>
-                    <?php if($active_qtype==='DISC'):?><th style="width:120px;text-align:center;">D/I/S/C</th><?php endif;?>
-                    <?php for($w=1;$w<=6;$w++):?><th style="text-align:center;width:64px;">W<?php echo $w;?><br><a href="#" class="mfsd-toggle-col" data-type="<?php echo $active_qtype;?>" data-week="<?php echo $w;?>" style="font-size:10px;text-decoration:none;">±</a></th><?php endfor;?>
-                    <th style="width:110px;text-align:center;">Actions</th>
-                </tr></thead>
-                <tbody>
-                <?php if(empty($current_questions)):?><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">No <?php echo $active_qtype;?> questions yet.</td></tr><?php endif;?>
-                <?php foreach($current_questions as $q):?>
-                <tr id="row-<?php echo $q['id'];?>">
-                    <td style="color:#999;font-size:13px;"><?php echo (int)$q['q_order'];?></td>
-                    <td style="font-size:13px;"><?php echo esc_html(wp_trim_words($q['q_text'],18,'…'));?></td>
-                    <?php if($active_qtype==='RAG'):?><td style="text-align:center;font-size:12px;color:#666;"><?php echo (int)$q['red_score'].'/'.(int)$q['amber_score'].'/'.(int)$q['green_score'];?></td><?php endif;?>
-                    <?php if($active_qtype==='DISC'):?><?php $dm=$q['disc_mapping']?json_decode($q['disc_mapping'],true):['D'=>0,'I'=>0,'S'=>0,'C'=>0];?><td style="text-align:center;font-size:11px;color:#666;">D<?php echo $dm['D'];?> I<?php echo $dm['I'];?> S<?php echo $dm['S'];?> C<?php echo $dm['C'];?></td><?php endif;?>
-                    <?php for($w=1;$w<=6;$w++):?><td style="text-align:center;"><input type="checkbox" name="mfsd_rag_question_weeks[<?php echo(int)$q['id'];?>][]" value="<?php echo $w;?>" class="mfsd-week-check mfsd-type-<?php echo $active_qtype;?>-w<?php echo $w;?>" <?php checked((int)$q['w'.$w],1);?>></td><?php endfor;?>
-                    <td style="text-align:center;">
-                        <button type="button" class="button button-small mfsd-edit-btn" data-id="<?php echo $q['id'];?>" style="margin-right:4px;">Edit</button>
-                        <form method="post" action="" style="display:inline;" onsubmit="return confirm('Delete this question?');">
-                            <?php wp_nonce_field('mfsd_rag_question_crud','mfsd_rag_question_nonce');?>
-                            <input type="hidden" name="mfsd_rag_question_action" value="delete">
-                            <input type="hidden" name="question_id" value="<?php echo $q['id'];?>">
-                            <input type="hidden" name="qtype" value="<?php echo $active_qtype;?>">
-                            <button type="submit" class="button button-small" style="color:#d63638;border-color:#d63638;">Delete</button>
-                        </form>
-                    </td>
-                </tr>
-                <tr id="edit-row-<?php echo $q['id'];?>" style="display:none;background:#fffbe6;">
-                    <td colspan="10" style="padding:16px;">
-                        <form method="post" action="">
-                            <?php wp_nonce_field('mfsd_rag_question_crud','mfsd_rag_question_nonce');?>
-                            <input type="hidden" name="mfsd_rag_question_action" value="edit">
-                            <input type="hidden" name="question_id" value="<?php echo $q['id'];?>">
-                            <input type="hidden" name="q_type" value="<?php echo $active_qtype;?>">
-                            <input type="hidden" name="qtype" value="<?php echo $active_qtype;?>">
-                            <?php $this->render_question_form_fields($q,$active_qtype);?>
-                            <div style="margin-top:12px;"><button type="submit" class="button button-primary">Save Changes</button> <button type="button" class="button mfsd-cancel-edit" data-id="<?php echo $q['id'];?>" style="margin-left:8px;">Cancel</button></div>
-                        </form>
-                    </td>
-                </tr>
-                <?php endforeach;?>
-                </tbody>
-            </table>
-            <?php if(!empty($current_questions)):?><input type="submit" class="button button-secondary" value="Save Week Configuration"><?php endif;?>
+        <?php $cq=$q_by_type[$active_qtype];?>
+        <form method="post" action=""><?php wp_nonce_field('mfsd_rag_admin_save','mfsd_rag_admin_nonce');?>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="margin:0;"><?php echo $active_qtype;?> Questions (<?php echo count($cq);?>)</h3><button type="button" id="mfsd-show-add-form" class="button button-primary">+ Add New <?php echo $active_qtype;?> Question</button></div>
+        <table class="widefat striped" style="margin-bottom:16px;"><thead><tr>
+            <th style="width:35px;">#</th><th>Question</th>
+            <?php if($active_qtype==='RAG'):?><th style="width:100px;text-align:center;">R/A/G scores</th><?php endif;?>
+            <?php if($active_qtype==='DISC'):?><th style="width:120px;text-align:center;">D/I/S/C</th><?php endif;?>
+            <?php for($w=1;$w<=6;$w++):?><th style="text-align:center;width:64px;">W<?php echo $w;?><br><a href="#" class="mfsd-toggle-col" data-type="<?php echo $active_qtype;?>" data-week="<?php echo $w;?>" style="font-size:10px;text-decoration:none;">±</a></th><?php endfor;?>
+            <th style="width:110px;text-align:center;">Actions</th>
+        </tr></thead><tbody>
+        <?php if(empty($cq)):?><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">No <?php echo $active_qtype;?> questions yet.</td></tr><?php endif;?>
+        <?php foreach($cq as $q):?>
+        <tr id="row-<?php echo $q['id'];?>">
+            <td style="color:#999;font-size:13px;"><?php echo (int)$q['q_order'];?></td>
+            <td style="font-size:13px;"><?php echo esc_html(wp_trim_words($q['q_text'],18,'…'));?></td>
+            <?php if($active_qtype==='RAG'):?><td style="text-align:center;font-size:12px;color:#666;"><?php echo (int)$q['red_score'].'/'.(int)$q['amber_score'].'/'.(int)$q['green_score'];?></td><?php endif;?>
+            <?php if($active_qtype==='DISC'):?><?php $dm=$q['disc_mapping']?json_decode($q['disc_mapping'],true):['D'=>0,'I'=>0,'S'=>0,'C'=>0];?><td style="text-align:center;font-size:11px;color:#666;">D<?php echo $dm['D'];?> I<?php echo $dm['I'];?> S<?php echo $dm['S'];?> C<?php echo $dm['C'];?></td><?php endif;?>
+            <?php for($w=1;$w<=6;$w++):?><td style="text-align:center;"><input type="checkbox" name="mfsd_rag_question_weeks[<?php echo(int)$q['id'];?>][]" value="<?php echo $w;?>" class="mfsd-week-check mfsd-type-<?php echo $active_qtype;?>-w<?php echo $w;?>" <?php checked((int)$q['w'.$w],1);?>></td><?php endfor;?>
+            <td style="text-align:center;">
+                <button type="button" class="button button-small mfsd-edit-btn" data-id="<?php echo $q['id'];?>" style="margin-right:4px;">Edit</button>
+                <form method="post" action="" style="display:inline;" onsubmit="return confirm('Delete this question?');"><?php wp_nonce_field('mfsd_rag_question_crud','mfsd_rag_question_nonce');?><input type="hidden" name="mfsd_rag_question_action" value="delete"><input type="hidden" name="question_id" value="<?php echo $q['id'];?>"><input type="hidden" name="qtype" value="<?php echo $active_qtype;?>"><button type="submit" class="button button-small" style="color:#d63638;border-color:#d63638;">Delete</button></form>
+            </td>
+        </tr>
+        <tr id="edit-row-<?php echo $q['id'];?>" style="display:none;background:#fffbe6;"><td colspan="10" style="padding:16px;">
+            <form method="post" action=""><?php wp_nonce_field('mfsd_rag_question_crud','mfsd_rag_question_nonce');?><input type="hidden" name="mfsd_rag_question_action" value="edit"><input type="hidden" name="question_id" value="<?php echo $q['id'];?>"><input type="hidden" name="q_type" value="<?php echo $active_qtype;?>"><input type="hidden" name="qtype" value="<?php echo $active_qtype;?>"><?php $this->render_question_form_fields($q,$active_qtype);?>
+            <div style="margin-top:12px;"><button type="submit" class="button button-primary">Save Changes</button> <button type="button" class="button mfsd-cancel-edit" data-id="<?php echo $q['id'];?>" style="margin-left:8px;">Cancel</button></div></form>
+        </td></tr>
+        <?php endforeach;?>
+        </tbody></table>
+        <?php if(!empty($cq)):?><input type="submit" class="button button-secondary" value="Save Week Configuration"><?php endif;?>
         </form>
-
         <div id="mfsd-add-form" style="display:none;margin-top:20px;padding:20px;background:#f0f8ff;border:1px solid #b8daff;border-radius:6px;">
             <h3 style="margin-top:0;">Add New <?php echo $active_qtype;?> Question</h3>
-            <form method="post" action="">
-                <?php wp_nonce_field('mfsd_rag_question_crud','mfsd_rag_question_nonce');?>
-                <input type="hidden" name="mfsd_rag_question_action" value="add">
-                <input type="hidden" name="q_type" value="<?php echo $active_qtype;?>">
-                <input type="hidden" name="qtype" value="<?php echo $active_qtype;?>">
-                <?php $this->render_question_form_fields(null,$active_qtype);?>
-                <div style="margin-top:12px;"><button type="submit" class="button button-primary">Add Question</button> <button type="button" id="mfsd-cancel-add" class="button" style="margin-left:8px;">Cancel</button></div>
-            </form>
+            <form method="post" action=""><?php wp_nonce_field('mfsd_rag_question_crud','mfsd_rag_question_nonce');?><input type="hidden" name="mfsd_rag_question_action" value="add"><input type="hidden" name="q_type" value="<?php echo $active_qtype;?>"><input type="hidden" name="qtype" value="<?php echo $active_qtype;?>"><?php $this->render_question_form_fields(null,$active_qtype);?>
+            <div style="margin-top:12px;"><button type="submit" class="button button-primary">Add Question</button> <button type="button" id="mfsd-cancel-add" class="button" style="margin-left:8px;">Cancel</button></div></form>
         </div>
-
-        <?php elseif ($active_tab === 'reset'): ?>
+        <?php elseif($active_tab==='reset'):?>
         <h2>🔄 Reset a Student's Week</h2>
-        <p>Permanently deletes all answers, MBTI/DISC results, red plans, and the cached AI summary. <strong>Cannot be undone.</strong></p>
+        <p>Permanently deletes all answers, MBTI/DISC results, red plans, and cached AI summary. <strong>Cannot be undone.</strong></p>
         <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px;max-width:540px;">
             <table class="form-table" style="margin:0;">
                 <tr><th style="padding:8px 0;"><label for="mfsd-reset-user">Student</label></th><td style="padding:8px 0;"><select id="mfsd-reset-user" style="width:100%;max-width:320px;padding:6px;"><option value="">— select a student —</option><?php foreach($users as $u):?><option value="<?php echo esc_attr($u->ID);?>"><?php echo esc_html($u->display_name.' ('.$u->user_email.')');?></option><?php endforeach;?></select></td></tr>
@@ -965,41 +809,38 @@ final class MFSD_Weekly_RAG {
             </table>
             <div style="margin-top:16px;display:flex;gap:10px;align-items:center;"><button type="button" id="mfsd-reset-btn" class="button button-secondary" style="border-color:#d63638;color:#d63638;">🗑 Reset Week</button><span id="mfsd-reset-status" style="font-size:14px;"></span></div>
         </div>
-        <?php endif; ?>
+        <?php endif;?>
         </div>
-
         <script>
         (function(){
-            const voiceSel=document.getElementById('mfsd-voice-preview-select'),previewBtn=document.getElementById('mfsd-voice-preview-btn'),useBtn=document.getElementById('mfsd-voice-use-btn'),voiceField=document.getElementById('mfsd_rag_tts_voice'),copiedMsg=document.getElementById('mfsd-voice-copied');
-            if(voiceSel&&voiceField){function lv(){const vv=speechSynthesis.getVoices().filter(v=>v.lang.startsWith('en'));if(!vv.length)return;voiceSel.innerHTML='';const s=voiceField.value.trim();vv.forEach(v=>{const o=document.createElement('option');o.value=v.name;o.textContent=v.name+' ('+v.lang+')';if(v.name===s)o.selected=true;voiceSel.appendChild(o);});}lv();speechSynthesis.onvoiceschanged=lv;
-            previewBtn.addEventListener('click',()=>{speechSynthesis.cancel();const v=speechSynthesis.getVoices().find(v=>v.name===voiceSel.value);const u=new SpeechSynthesisUtterance("Hi! I'm your AI coach on the High Performance Pathway. How does this voice sound?");u.rate=0.92;u.pitch=1.05;if(v)u.voice=v;speechSynthesis.speak(u);});
-            useBtn.addEventListener('click',()=>{voiceField.value=voiceSel.value;copiedMsg.style.display='block';setTimeout(()=>copiedMsg.style.display='none',3000);});}
+            const vs=document.getElementById('mfsd-voice-preview-select'),pb=document.getElementById('mfsd-voice-preview-btn'),ub=document.getElementById('mfsd-voice-use-btn'),vf=document.getElementById('mfsd_rag_tts_voice'),cm=document.getElementById('mfsd-voice-copied');
+            if(vs&&vf){function lv(){const vv=speechSynthesis.getVoices().filter(v=>v.lang.startsWith('en'));if(!vv.length)return;vs.innerHTML='';const s=vf.value.trim();vv.forEach(v=>{const o=document.createElement('option');o.value=v.name;o.textContent=v.name+' ('+v.lang+')';if(v.name===s)o.selected=true;vs.appendChild(o);});}lv();speechSynthesis.onvoiceschanged=lv;
+            pb.addEventListener('click',()=>{speechSynthesis.cancel();const v=speechSynthesis.getVoices().find(v=>v.name===vs.value);const u=new SpeechSynthesisUtterance("Hi! I'm SteveGPT your AI coach. How does this voice sound?");u.rate=0.92;u.pitch=1.05;if(v)u.voice=v;speechSynthesis.speak(u);});
+            ub.addEventListener('click',()=>{vf.value=vs.value;cm.style.display='block';setTimeout(()=>cm.style.display='none',3000);});}
             document.querySelectorAll('.mfsd-toggle-col').forEach(l=>l.addEventListener('click',e=>{e.preventDefault();const b=document.querySelectorAll('.mfsd-type-'+l.dataset.type+'-w'+l.dataset.week);const off=Array.from(b).some(x=>!x.checked);b.forEach(x=>x.checked=off);}));
             document.querySelectorAll('.mfsd-edit-btn').forEach(b=>b.addEventListener('click',()=>{const r=document.getElementById('edit-row-'+b.dataset.id);r.style.display=r.style.display==='none'?'':'none';}));
             document.querySelectorAll('.mfsd-cancel-edit').forEach(b=>b.addEventListener('click',()=>{document.getElementById('edit-row-'+b.dataset.id).style.display='none';}));
             const sa=document.getElementById('mfsd-show-add-form'),af=document.getElementById('mfsd-add-form'),ca=document.getElementById('mfsd-cancel-add');
-            if(sa&&af){sa.addEventListener('click',()=>af.style.display=af.style.display==='none'?'block':'none');}if(ca&&af){ca.addEventListener('click',()=>af.style.display='none');}
+            if(sa&&af)sa.addEventListener('click',()=>af.style.display=af.style.display==='none'?'block':'none');
+            if(ca&&af)ca.addEventListener('click',()=>af.style.display='none');
             const rb=document.getElementById('mfsd-reset-btn');
-            if(rb){rb.addEventListener('click',async function(){const uid=document.getElementById('mfsd-reset-user').value,week=document.getElementById('mfsd-reset-week').value,st=document.getElementById('mfsd-reset-status');if(!uid){st.textContent='⚠ Please select a student.';st.style.color='#d63638';return;}const nm=document.getElementById('mfsd-reset-user').options[document.getElementById('mfsd-reset-user').selectedIndex].textContent;if(!confirm('Reset Week '+week+' for '+nm+'?\n\nPermanently deletes ALL answers, results and red plans.'))return;this.disabled=true;st.textContent='Resetting…';st.style.color='#666';try{const r=await fetch('<?php echo $reset_url;?>',{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':'<?php echo $nonce_rest;?>'},body:JSON.stringify({user_id:parseInt(uid),week:parseInt(week)})});const d=await r.json();if(d.ok){st.textContent='✔ '+d.message;st.style.color='green';}else{st.textContent='✘ '+(d.error||'Unknown error');st.style.color='#d63638';}}catch(e){st.textContent='✘ '+e.message;st.style.color='#d63638';}finally{this.disabled=false;}});}
+            if(rb)rb.addEventListener('click',async function(){const uid=document.getElementById('mfsd-reset-user').value,week=document.getElementById('mfsd-reset-week').value,st=document.getElementById('mfsd-reset-status');if(!uid){st.textContent='⚠ Please select a student.';st.style.color='#d63638';return;}const nm=document.getElementById('mfsd-reset-user').options[document.getElementById('mfsd-reset-user').selectedIndex].textContent;if(!confirm('Reset Week '+week+' for '+nm+'?\n\nPermanently deletes ALL answers, results and red plans.'))return;this.disabled=true;st.textContent='Resetting…';st.style.color='#666';try{const r=await fetch('<?php echo $reset_url;?>',{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':'<?php echo $nonce_rest;?>'},body:JSON.stringify({user_id:parseInt(uid),week:parseInt(week)})});const d=await r.json();if(d.ok){st.textContent='✔ '+d.message;st.style.color='green';}else{st.textContent='✘ '+(d.error||'Unknown error');st.style.color='#d63638';}}catch(e){st.textContent='✘ '+e.message;st.style.color='#d63638';}finally{this.disabled=false;}});
         })();
         </script>
         <?php
     }
 
-    private function render_question_form_fields($q, $type) {
-        $e = $q !== null;
-        $wc = []; for($w=1;$w<=6;$w++) $wc[$w]=$e?(int)$q['w'.$w]:1;
-        $dm = ($e&&$type==='DISC'&&$q['disc_mapping'])?json_decode($q['disc_mapping'],true):['D'=>0,'I'=>0,'S'=>0,'C'=>0];
-        ?>
-        <table class="form-table" style="margin:0;">
-            <tr><th style="width:120px;padding:6px 0;">Order #</th><td style="padding:6px 0;"><input type="number" name="q_order" value="<?php echo $e?(int)$q['q_order']:'';?>" style="width:80px;" required></td></tr>
-            <tr><th style="padding:6px 0;">Question text</th><td style="padding:6px 0;"><textarea name="q_text" rows="3" style="width:100%;max-width:700px;" required><?php echo $e?esc_textarea($q['q_text']):'';?></textarea></td></tr>
-            <?php if($type==='RAG'):?><tr><th style="padding:6px 0;">Scores R/A/G</th><td style="padding:6px 0;">Red:<input type="number" name="red_score" value="<?php echo $e?(int)$q['red_score']:0;?>" style="width:60px;margin:0 8px;"> Amber:<input type="number" name="amber_score" value="<?php echo $e?(int)$q['amber_score']:2;?>" style="width:60px;margin:0 8px;"> Green:<input type="number" name="green_score" value="<?php echo $e?(int)$q['green_score']:4;?>" style="width:60px;margin:0 8px;"></td></tr><?php endif;?>
-            <?php if($type==='DISC'):?><tr><th style="padding:6px 0;">DISC Mapping</th><td style="padding:6px 0;">D:<input type="number" name="disc_d" value="<?php echo $dm['D'];?>" step="0.1" style="width:60px;margin:0 8px;"> I:<input type="number" name="disc_i" value="<?php echo $dm['I'];?>" step="0.1" style="width:60px;margin:0 8px;"> S:<input type="number" name="disc_s" value="<?php echo $dm['S'];?>" step="0.1" style="width:60px;margin:0 8px;"> C:<input type="number" name="disc_c" value="<?php echo $dm['C'];?>" step="0.1" style="width:60px;margin:0 8px;"><p class="description" style="margin-top:4px;">Set 1 for the primary dimension this question measures, 0 for others.</p></td></tr><?php endif;?>
-            <?php if($type==='MBTI'):?><tr><th style="padding:6px 0;">Axis note</th><td style="padding:6px 0;color:#666;font-size:13px;">Order 1–3 = E/I, 4–6 = S/N, 7–9 = T/F, 10–12 = J/P.</td></tr><?php endif;?>
-            <tr><th style="padding:6px 0;">Active weeks</th><td style="padding:6px 0;"><?php for($w=1;$w<=6;$w++):?><label style="margin-right:12px;"><input type="checkbox" name="w<?php echo $w;?>" value="1" <?php checked($wc[$w],1);?>> Week <?php echo $w;?></label><?php endfor;?></td></tr>
-        </table>
-        <?php
+    private function render_question_form_fields($q,$type) {
+        $e=$q!==null; $wc=[]; for($w=1;$w<=6;$w++)$wc[$w]=$e?(int)$q['w'.$w]:1;
+        $dm=($e&&$type==='DISC'&&$q['disc_mapping'])?json_decode($q['disc_mapping'],true):['D'=>0,'I'=>0,'S'=>0,'C'=>0];
+        ?><table class="form-table" style="margin:0;">
+        <tr><th style="width:120px;padding:6px 0;">Order #</th><td style="padding:6px 0;"><input type="number" name="q_order" value="<?php echo $e?(int)$q['q_order']:'';?>" style="width:80px;" required></td></tr>
+        <tr><th style="padding:6px 0;">Question text</th><td style="padding:6px 0;"><textarea name="q_text" rows="3" style="width:100%;max-width:700px;" required><?php echo $e?esc_textarea($q['q_text']):'';?></textarea></td></tr>
+        <?php if($type==='RAG'):?><tr><th style="padding:6px 0;">Scores R/A/G</th><td style="padding:6px 0;">Red:<input type="number" name="red_score" value="<?php echo $e?(int)$q['red_score']:0;?>" style="width:60px;margin:0 8px;"> Amber:<input type="number" name="amber_score" value="<?php echo $e?(int)$q['amber_score']:2;?>" style="width:60px;margin:0 8px;"> Green:<input type="number" name="green_score" value="<?php echo $e?(int)$q['green_score']:4;?>" style="width:60px;margin:0 8px;"></td></tr><?php endif;?>
+        <?php if($type==='DISC'):?><tr><th style="padding:6px 0;">DISC Mapping</th><td style="padding:6px 0;">D:<input type="number" name="disc_d" value="<?php echo $dm['D'];?>" step="0.1" style="width:60px;margin:0 8px;"> I:<input type="number" name="disc_i" value="<?php echo $dm['I'];?>" step="0.1" style="width:60px;margin:0 8px;"> S:<input type="number" name="disc_s" value="<?php echo $dm['S'];?>" step="0.1" style="width:60px;margin:0 8px;"> C:<input type="number" name="disc_c" value="<?php echo $dm['C'];?>" step="0.1" style="width:60px;margin:0 8px;"></td></tr><?php endif;?>
+        <?php if($type==='MBTI'):?><tr><th style="padding:6px 0;">Axis note</th><td style="padding:6px 0;color:#666;font-size:13px;">Order 1–3=E/I, 4–6=S/N, 7–9=T/F, 10–12=J/P.</td></tr><?php endif;?>
+        <tr><th style="padding:6px 0;">Active weeks</th><td style="padding:6px 0;"><?php for($w=1;$w<=6;$w++):?><label style="margin-right:12px;"><input type="checkbox" name="w<?php echo $w;?>" value="1" <?php checked($wc[$w],1);?>> Week <?php echo $w;?></label><?php endfor;?></td></tr>
+        </table><?php
     }
 }
 
