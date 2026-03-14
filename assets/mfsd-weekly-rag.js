@@ -44,6 +44,7 @@
 
     speak(text, onEnd) {
       if (!this.supported || !text) return;
+      const utt = new SpeechSynthesisUtterance(cleanText);
       window.speechSynthesis.cancel();
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate   = 0.92;
@@ -93,6 +94,7 @@
         if (onEnd) onEnd();
         return;
       }
+      const cleanText = this._cleanForSpeech(text);
       window.speechSynthesis.cancel();
       element.textContent = '';
 
@@ -102,6 +104,30 @@
         this.speak(text, onEnd);
         return;
       }
+
+      _cleanForSpeech(text) {
+  return text
+    // Remove markdown bold/italic markers
+    .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    // Remove markdown headers
+    .replace(/^#{1,6}\s+/gm, '')
+    // Remove bullet point markers
+    .replace(/^\s*[-*•]\s+/gm, '')
+    // Remove numbered list markers
+    .replace(/^\s*\d+\.\s+/gm, '')
+    // Remove emoji (Unicode ranges)
+    .replace(/[\u{1F300}-\u{1FFFF}|\u{2600}-\u{27BF}]/gu, '')
+    // Remove any leftover asterisks
+    .replace(/\*/g, '')
+    // Remove backticks
+    .replace(/`/g, '')
+    // Clean up multiple spaces/newlines left behind
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  },
+
 
       // ── Sentence mode ────────────────────────────────────────────────────
       // Speak each sentence as its own utterance, reveal that sentence as it starts.
