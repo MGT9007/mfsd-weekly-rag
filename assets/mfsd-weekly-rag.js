@@ -762,8 +762,24 @@
     const steveName = el("div"); steveName.style.cssText = "font-size:12px;font-weight:500;color:#185FA5;margin-bottom:6px;"; steveName.textContent = "SteveGPT";
     const steveText = el("div"); steveText.style.cssText = "font-size:14px;color:#1d2327;line-height:1.6;";
     steveSection.appendChild(steveName); steveSection.appendChild(steveText);
-    if (mfsdTTS.supported) { const sp=document.createElement('span'); steveText.appendChild(sp); mfsdTTS.speakWithReveal(steveIntro,sp,null); steveSection.appendChild(mfsdTTS.makeControls(steveIntro)); }
-    else { steveText.textContent = steveIntro; }
+    if (mfsdTTS.supported) {
+  const sp = document.createElement('span');
+  steveText.appendChild(sp);
+    steveSection.appendChild(mfsdTTS.makeControls(steveIntro));
+
+    // After intro finishes, read each suggestion in sequence
+    mfsdTTS.speakWithReveal(steveIntro, sp, () => {
+      if (!suggestions.length) return;
+      let i = 0;
+      const speakNextSuggestion = () => {
+        if (i >= suggestions.length) return;
+        const text = 'Idea ' + (i + 1) + '. ' + suggestions[i];
+        i++;
+        mfsdTTS.speak(text, speakNextSuggestion);
+      };
+      speakNextSuggestion();
+    });
+   }
 
     // Suggestions
     if (suggestions.length > 0) {
