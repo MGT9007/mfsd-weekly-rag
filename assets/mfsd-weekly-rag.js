@@ -222,88 +222,80 @@
     _accumulated: '',   // builds up the full sentence across multiple result events
 
     init() {
-      if (!this.supported) return;
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      this.recognition = new SR();
-      this.recognition.lang = 'en-GB';
-      this.recognition.interimResults = true;
-      this.recognition.maxAlternatives = 1;
-      this.recognition.continuous = true; // WE control when it stops, not the browser
-
-      this.recognition.onresult = (e) => {
-        // Normal mode: first word detected cancels the AI mid-sentence
-        if (convMode === 'normal' && !this._interrupted) {
-          this._interrupted = true;
-          mfsdTTS.stop();
-        }
-
-        let interim = '';
-        // Collect any new final segments into accumulated text
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) {
-            this._accumulated += (this._accumulated ? ' ' : '') + t.trim();
-          } else {
-            interim = t;
-          }
-        }
-
-        // Show the full picture: confirmed text + what's still being heard
-        const display = this._accumulated + (interim ? ' ' + interim : '');
-        if (this._onInterimCb) this._onInterimCb(display.trim());
-
-        // Reset the silence timer every time speech arrives
-        clearTimeout(this._silenceTimer);
-        this._silenceTimer = setTimeout(() => {
-          // User has been quiet for _silenceDelay ms — we're done
-          const finalText = this._accumulated || display.trim();
-          this.stop();
-          if (finalText && this._onFinalCb) this._onFinalCb(finalText.trim());
-        }, this._silenceDelay);
-      };
-
-      this.recognition.onerror = (e) => {
-        this._cleanup();
-        const msgs = {
-          'not-allowed'  : 'Microphone access was denied. Please allow microphone permission and try again.',
-          'no-speech'    : 'No speech was detected. Please try again.',
-          'network'      : 'A network error occurred. Please check your connection.',
-          'audio-capture': 'No microphone was found on this device.',
-        };
-        if (this._onErrorCb) this._onErrorCb(msgs[e.error] || 'Speech recognition error: ' + e.error);
-      };
-
-      this.recognition.onend = () => {
-        // If we stopped intentionally the timer already fired or was cleared — do nothing
-        this.isListening = false;
-      };
+    // Instance is created fresh in each listen() call — nothing needed here
     },
 
-    listen(onInterim, onFinal, onError) {
-      if (!this.supported || !this.recognition) {
-        onError('Speech recognition is not supported in this browser.');
-        return;
+   listen(onInterim, onFinal, onError) {
+  if (!this.supported) {
+    onError('Speech recognition is not supported in this browser.');
+    return;
+  }
+  if (this.isListening) { this.stop(); return; }
+
+  if (convMode === 'polite') mfsdTTS.stop();
+
+  this._onInterimCb = onInterim;
+  this._onFinalCb   = onFinal;
+  this._onErrorCb   = onError;
+  this._accumulated = '';
+  this._interrupted = false;
+  this.isListening  = true;
+
+  // Recreate recognition instance fresh each time — reusing the same
+  // instance after stop() is unreliable in Chrome and causes silent failures
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  this.recognition = new SR();
+  this.recognition.lang = 'en-GB';
+  this.recognition.interimResults = true;
+  this.recognition.maxAlternatives = 1;
+  this.recognition.continuous = true;
+
+  this.recognition.onresult = (e) => {
+    if (convMode === 'normal' && !this._interrupted) {
+      this._interrupted = true;
+      mfsdTTS.stop();
+    }
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        this._accumulated += (this._accumulated ? ' ' : '') + t.trim();
+      } else {
+        interim = t;
       }
-      if (this.isListening) { this.stop(); return; }
+    }
+    const display = this._accumulated + (interim ? ' ' + interim : '');
+    if (this._onInterimCb) this._onInterimCb(display.trim());
+    clearTimeout(this._silenceTimer);
+    this._silenceTimer = setTimeout(() => {
+      const finalText = this._accumulated || display.trim();
+      this.stop();
+      if (finalText && this._onFinalCb) this._onFinalCb(finalText.trim());
+    }, this._silenceDelay);
+  };
 
-      // Polite mode: stop AI speaking before listening
-      // Normal mode: keep mic open alongside TTS — first word cancels AI mid-sentence
-      if (convMode === 'polite') mfsdTTS.stop();
+  this.recognition.onerror = (e) => {
+    this._cleanup();
+    const msgs = {
+      'not-allowed'  : 'Microphone access was denied. Please allow microphone permission and try again.',
+      'no-speech'    : 'No speech was detected. Please try again.',
+      'network'      : 'A network error occurred. Please check your connection.',
+      'audio-capture': 'No microphone was found on this device.',
+    };
+    if (this._onErrorCb) this._onErrorCb(msgs[e.error] || 'Speech recognition error: ' + e.error);
+  };
 
-      this._onInterimCb = onInterim;
-      this._onFinalCb   = onFinal;
-      this._onErrorCb   = onError;
-      this._accumulated = '';
-      this._interrupted = false;
-      this.isListening  = true;
+  this.recognition.onend = () => {
+    this.isListening = false;
+  };
 
-      try {
-        this.recognition.start();
-      } catch(e) {
-        this._cleanup();
-        onError('Could not start microphone: ' + e.message);
-      }
-    },
+  try {
+    this.recognition.start();
+  } catch(e) {
+    this._cleanup();
+    onError('Could not start microphone: ' + e.message);
+  }
+},
 
     stop() {
       clearTimeout(this._silenceTimer);
