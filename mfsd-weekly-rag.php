@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 4.0.9
+ * Version: 4.0.10
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '4.0.9';
+    const VERSION = '4.0.10';
    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
@@ -642,7 +642,9 @@ final class MFSD_Weekly_RAG {
         if (isset($GLOBALS['mwai'])) {
             try {
                 $mwai = $GLOBALS['mwai'];
-                $username = um_get_display_name($user_id);
+                $username = function_exists('um_get_display_name') 
+                    ? um_get_display_name($user_id) 
+                    : get_userdata($user_id)->display_name;
                 
                 if ($question['q_type'] === 'MBTI') {
                     // MBTI question guidance
