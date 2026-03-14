@@ -191,7 +191,6 @@
       });
       if (res.ok) {
         const data = await res.json();
-        // Store pending red plans so resumeFromLastQuestion can check them
         cfg._pendingRedPlans = data.pending_red_plans || [];
         return data;
       }
@@ -244,7 +243,6 @@
   }
 
   async function resumeFromLastQuestion(lastQuestionId, answeredIds) {
-    // First check if any previously-answered Red question is missing its plan
     const pendingPlans = cfg._pendingRedPlans || [];
     if (pendingPlans.length > 0) {
       for (let i = 0; i < questions.length; i++) {
@@ -255,7 +253,6 @@
         }
       }
     }
-    // Otherwise find first unanswered question
     let firstUnansweredIdx = -1;
     for (let i = 0; i < questions.length; i++) {
       if (!answeredIds.includes(parseInt(questions[i].id))) { firstUnansweredIdx = i; break; }
@@ -329,7 +326,6 @@
         const gd = await gr.json();
         if (gd.ok && gd.guidance) {
           aiGuidanceDiv.innerHTML = '';
-          // SteveGPT label
           const steveLabel = el("div");
           steveLabel.style.cssText = "font-size:12px;font-weight:500;color:#856404;margin-bottom:6px;";
           steveLabel.textContent = "SteveGPT";
@@ -424,7 +420,6 @@
       try{j=raw?JSON.parse(raw):null;}catch(e){hideQuestionLoading();alert("Server returned non-JSON: "+raw.slice(0,200));return;}
       if(!res.ok||!j||!j.ok){hideQuestionLoading();alert("Save failed: "+((j&&j.error)||res.status+" "+res.statusText));return;}
       stack.push({q,answer}); hideQuestionLoading();
-      // Red on RAG → show improvement plan first
       if (answer==='R'&&q.q_type==='RAG') { await renderRedFollowup(q,idx); }
       else if (idx<questions.length-1) { idx++; await renderQuestion(); }
       else { await renderSummary(); }
@@ -523,35 +518,61 @@
     const ss=el("div","rag-card"); ss.style.cssText="background:#E6F1FB;border:0.5px solid #B5D4F4;padding:16px;margin-bottom:0;";
     const sn=el("div"); sn.style.cssText="font-size:12px;font-weight:500;color:#185FA5;margin-bottom:6px;"; sn.textContent="SteveGPT"; ss.appendChild(sn);
     const st=el("div"); st.style.cssText="font-size:14px;color:#1d2327;line-height:1.6;"; ss.appendChild(st);
+
+    // Suggestions label — hidden until TTS reaches it
+    const sugLabel = el("div");
+    sugLabel.style.cssText = "font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.04em;color:#666;margin:14px 0 8px;display:none;";
+    sugLabel.textContent = "Some ideas to get you started";
+    ss.appendChild(sugLabel);
+
+    // Empty container — suggestions appear here one by one as they are spoken
+    const sugContainer = el("div");
+    ss.appendChild(sugContainer);
+
     if (mfsdTTS.supported) {
       const sp=document.createElement('span'); st.appendChild(sp);
       ss.appendChild(mfsdTTS.makeControls(steveIntro));
-      // Read intro, then suggestions in sequence
+      // Read intro then reveal + speak each suggestion in sequence
       mfsdTTS.speakWithReveal(steveIntro, sp, () => {
         if (!suggestions.length) return;
+        sugLabel.style.display = 'block';
         let i = 0;
         const speakNext = () => {
           if (i >= suggestions.length) return;
-          const text = 'Idea ' + (i + 1) + '. ' + suggestions[i]; i++;
+          const sug = suggestions[i];
+          const text = 'Idea ' + (i + 1) + '. ' + sug;
+
+          // Reveal this suggestion row just before it is spoken
+          const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
+          const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(i+1)+".";
+          const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
+          const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+          const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
+          sr.appendChild(nm); sr.appendChild(inn);
+          sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
+          sugContainer.appendChild(sr);
+
+          i++;
           mfsdTTS.speak(text, speakNext);
         };
         speakNext();
       });
-    } else { st.textContent=steveIntro; }
-
-    // Suggestions
-    if (suggestions.length > 0) {
-      const sl=el("div"); sl.style.cssText="font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.04em;color:#666;margin:14px 0 8px;"; sl.textContent="Some ideas to get you started"; ss.appendChild(sl);
-      suggestions.forEach((sug,i)=>{
-        const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
-        const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(i+1)+".";
-        const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
-        const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
-        const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
-        sr.appendChild(nm); sr.appendChild(inn);
-        sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
-        ss.appendChild(sr);
-      });
+    } else {
+      // No TTS — show everything immediately
+      st.textContent = steveIntro;
+      if (suggestions.length > 0) {
+        sugLabel.style.display = 'block';
+        suggestions.forEach((sug,i)=>{
+          const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
+          const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(i+1)+".";
+          const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
+          const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+          const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
+          sr.appendChild(nm); sr.appendChild(inn);
+          sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
+          sugContainer.appendChild(sr);
+        });
+      }
     }
     card.appendChild(ss);
 
