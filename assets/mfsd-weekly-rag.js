@@ -13,7 +13,7 @@
   // ============================================================================
   // MFSD TEXT-TO-SPEECH ENGINE (Web Speech API)
   // ============================================================================
-  const mfsdTTS = {
+const mfsdTTS = {
     supported: ('speechSynthesis' in window),
     enabled: true,
     voices: [],
@@ -23,12 +23,10 @@
       if (!this.supported) return;
       const loadVoices = () => {
         this.voices = window.speechSynthesis.getVoices();
-        // First preference: voice set by admin in WP settings
         const adminVoice = (cfg.ttsVoice || '').trim();
         if (adminVoice) {
           this.preferredVoice = this.voices.find(v => v.name === adminVoice) || null;
         }
-        // Fallback: sensible English default
         if (!this.preferredVoice) {
           this.preferredVoice =
             this.voices.find(v => v.name.includes('Google UK English Female')) ||
@@ -42,43 +40,56 @@
       window.speechSynthesis.onvoiceschanged = loadVoices;
     },
 
-   speak(text, onEnd) {
-    if (!this.supported || !text) return;
-    const cleanText = this._cleanForSpeech(text);
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(cleanText);
-    utt.rate   = 0.92;
-    utt.pitch  = 1.05;
-    utt.volume = 1;
-    if (this.preferredVoice) utt.voice = this.preferredVoice;
-    if (onEnd) utt.onend = onEnd;
-    window.speechSynthesis.speak(utt);
-  },
+    // Strip markdown and emoji so TTS speaks clean natural text
+    _cleanForSpeech(text) {
+      return text
+        .replace(/\*\*\*(.*?)\*\*\*/g, '$1')   // bold+italic
+        .replace(/\*\*(.*?)\*\*/g, '$1')        // bold
+        .replace(/\*(.*?)\*/g, '$1')            // italic
+        .replace(/^#{1,6}\s+/gm, '')            // headers
+        .replace(/^\s*[-*•]\s+/gm, '')          // bullet points
+        .replace(/^\s*\d+\.\s+/gm, '')          // numbered lists
+        .replace(/\*/g, '')                     // any remaining asterisks
+        .replace(/`/g, '')                      // backticks
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown links → just label
+        .replace(/[\u{1F300}-\u{1FAFF}]/gu, '') // emoji block 1
+        .replace(/[\u{2600}-\u{27BF}]/gu, '')   // emoji block 2
+        .replace(/[\u{FE00}-\u{FEFF}]/gu, '')   // variation selectors
+        .replace(/\s{2,}/g, ' ')                // collapse extra spaces
+        .trim();
+    },
+
+    speak(text, onEnd) {
+      if (!this.supported || !text) return;
+      const cleanText = this._cleanForSpeech(text);
+      window.speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(cleanText);
+      utt.rate   = 0.92;
+      utt.pitch  = 1.05;
+      utt.volume = 1;
+      if (this.preferredVoice) utt.voice = this.preferredVoice;
+      if (onEnd) utt.onend = onEnd;
+      window.speechSynthesis.speak(utt);
+    },
 
     stop() {
       if (!this.supported) return;
       window.speechSynthesis.cancel();
     },
 
-    // Speaks text while progressively revealing it into `element` based on textReveal mode.
-    // onEnd fires when speech completes (or immediately in block mode).
-    // Helper: split text into sentences
     _splitSentences(text) {
       const sentences = text.match(/[^.!?]+[.!?]+["'\u201d]?\s*/g);
       if (!sentences || !sentences.length) return [text];
-      // Catch any trailing text without punctuation
       const joined = sentences.join('');
       const remainder = text.slice(joined.length).trim();
       if (remainder) sentences.push(remainder);
       return sentences.map(s => s.trim()).filter(Boolean);
     },
 
-    // Helper: split text into words
     _splitWords(text) {
       return text.split(/\s+/).filter(Boolean);
     },
 
-    // Make a configured utterance
     _makeUtt(text) {
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate   = 0.92;
@@ -88,66 +99,44 @@
       return utt;
     },
 
-  _cleanForSpeech(text) {
-  return text
-    // Remove markdown bold/italic markers
-    .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    // Remove markdown headers
-    .replace(/^#{1,6}\s+/gm, '')
-    // Remove bullet point markers
-    .replace(/^\s*[-*•]\s+/gm, '')
-    // Remove numbered list markers
-    .replace(/^\s*\d+\.\s+/gm, '')
-    // Remove emoji (Unicode ranges)
-    .replace(/[\u{1F300}-\u{1FFFF}|\u{2600}-\u{27BF}]/gu, '')
-    // Remove any leftover asterisks
-    .replace(/\*/g, '')
-    // Remove backticks
-    .replace(/`/g, '')
-    // Clean up multiple spaces/newlines left behind
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-  },
-
     speakWithReveal(text, element, onEnd) {
       if (!this.supported || !text) {
         element.textContent = text;
         if (onEnd) onEnd();
         return;
       }
+      // Clean text for speech, but keep original for display
       const cleanText = this._cleanForSpeech(text);
       window.speechSynthesis.cancel();
       element.textContent = '';
 
       // ── Block mode ───────────────────────────────────────────────────────
       if (textReveal === 'block') {
-        element.textContent = text;
-        this.speak(text, onEnd);
+        element.textContent = text;       // display original (with formatting)
+        this.speak(text, onEnd);          // speak cleaned version
         return;
       }
 
-    
       // ── Sentence mode ────────────────────────────────────────────────────
-      // Speak each sentence as its own utterance, reveal that sentence as it starts.
-      // Chaining via onend is 100% reliable cross-browser — no onboundary needed.
       if (textReveal === 'sentence') {
-        const sentences = this._splitSentences(text);
+        const sentences     = this._splitSentences(text);
+        const cleanSentences = this._splitSentences(cleanText);
         let revealed = '';
         let i = 0;
 
         const speakNext = () => {
           if (i >= sentences.length) {
-            element.textContent = text; // guarantee full text
+            element.textContent = text;
             if (onEnd) onEnd();
             return;
           }
-          const sentence = sentences[i++];
-          revealed += (revealed ? ' ' : '') + sentence;
+          const displaySentence = sentences[i];
+          const speechSentence  = cleanSentences[i] || displaySentence;
+          i++;
+          revealed += (revealed ? ' ' : '') + displaySentence;
           element.textContent = revealed;
 
-          const utt = this._makeUtt(sentence);
+          const utt = this._makeUtt(speechSentence);
           utt.onend   = speakNext;
           utt.onerror = () => { element.textContent = text; if (onEnd) onEnd(); };
           window.speechSynthesis.speak(utt);
@@ -158,12 +147,9 @@
       }
 
       // ── Word mode ────────────────────────────────────────────────────────
-      // Speak whole text as one natural utterance (no choppy pauses).
-      // Reveal words via a setInterval timer calibrated to our TTS rate.
-      // At rate=0.92, average English speech ≈ 130wpm → ~462ms per word.
       if (textReveal === 'word') {
-        const words = this._splitWords(text);
-        const msPerWord = Math.round(60000 / (130 * 0.92) * 0.83); // ≈ 417ms — slightly ahead of voice
+        const words    = this._splitWords(text);
+        const msPerWord = Math.round(60000 / (130 * 0.92) * 0.83); // ≈ 417ms
 
         let wordIndex = 0;
         let timer = null;
@@ -178,24 +164,11 @@
           element.textContent = words.slice(0, wordIndex).join(' ');
         };
 
-        const utt = this._makeUtt(text);
+        const utt = this._makeUtt(cleanText); // speak clean text
 
-        utt.onstart = () => {
-          // Start the word-reveal timer exactly when speech begins
-          timer = setInterval(revealNext, msPerWord);
-        };
-
-        utt.onend = () => {
-          clearInterval(timer);
-          element.textContent = text; // guarantee everything visible
-          if (onEnd) onEnd();
-        };
-
-        utt.onerror = () => {
-          clearInterval(timer);
-          element.textContent = text;
-          if (onEnd) onEnd();
-        };
+        utt.onstart = () => { timer = setInterval(revealNext, msPerWord); };
+        utt.onend   = () => { clearInterval(timer); element.textContent = text; if (onEnd) onEnd(); };
+        utt.onerror = () => { clearInterval(timer); element.textContent = text; if (onEnd) onEnd(); };
 
         window.speechSynthesis.speak(utt);
         return;
@@ -206,7 +179,6 @@
       this.speak(text, onEnd);
     },
 
-    // Small 🔊 / ⏹ inline controls for any message
     makeControls(text) {
       const wrap = document.createElement('div');
       wrap.className = 'mfsd-tts-controls';
