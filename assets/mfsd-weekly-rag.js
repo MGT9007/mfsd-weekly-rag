@@ -1,1867 +1,397 @@
-(function () {
-  console.log('MFSD_RAG_CFG', window.MFSD_RAG_CFG);
-  const cfg = window.MFSD_RAG_CFG || {};
-  const root = document.getElementById("mfsd-rag-root");
-  if (!root) return;
+// ============================================================================
+// CHANGE 1 — In saveAnswer(), replace the section after stack.push():
+//
+//   FIND this block (near the end of saveAnswer):
+//     stack.push({ q: q, answer: answer });
+//     hideQuestionLoading();
+//     if (idx < questions.length - 1) {
+//         idx++;
+//         await renderQuestion();
+//     } else {
+//         await renderSummary();
+//     }
+//
+//   REPLACE with:
+// ============================================================================
 
-  const chatSource = document.getElementById("mfsd-rag-chat-source");
+    stack.push({ q: q, answer: answer });
+    hideQuestionLoading();
 
-  // CRITICAL: Always get week from cfg which is set by PHP from page title
-  let week = cfg.week || 1;
-  console.log('Initial week from config:', week);
-
-  // ============================================================================
-  // MFSD TEXT-TO-SPEECH ENGINE (Web Speech API)
-  // ============================================================================
-const mfsdTTS = {
-    supported: ('speechSynthesis' in window),
-    enabled: true,
-    voices: [],
-    preferredVoice: null,
-
-    init() {
-      if (!this.supported) return;
-      const loadVoices = () => {
-        this.voices = window.speechSynthesis.getVoices();
-        const adminVoice = (cfg.ttsVoice || '').trim();
-        if (adminVoice) {
-          this.preferredVoice = this.voices.find(v => v.name === adminVoice) || null;
-        }
-        if (!this.preferredVoice) {
-          this.preferredVoice =
-            this.voices.find(v => v.name.includes('Google UK English Female')) ||
-            this.voices.find(v => v.name.includes('Samantha')) ||
-            this.voices.find(v => v.lang === 'en-GB') ||
-            this.voices.find(v => v.lang.startsWith('en-')) ||
-            this.voices[0] || null;
-        }
-      };
-      loadVoices();
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    },
-
-    // Strip markdown and emoji so TTS speaks clean natural text
-    _cleanForSpeech(text) {
-      return text
-        .replace(/\*\*\*(.*?)\*\*\*/g, '$1')   // bold+italic
-        .replace(/\*\*(.*?)\*\*/g, '$1')        // bold
-        .replace(/\*(.*?)\*/g, '$1')            // italic
-        .replace(/^#{1,6}\s+/gm, '')            // headers
-        .replace(/^\s*[-*•]\s+/gm, '')          // bullet points
-        .replace(/^\s*\d+\.\s+/gm, '')          // numbered lists
-        .replace(/\*/g, '')                     // any remaining asterisks
-        .replace(/`/g, '')                      // backticks
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown links → just label
-        .replace(/[\u{1F300}-\u{1FAFF}]/gu, '') // emoji block 1
-        .replace(/[\u{2600}-\u{27BF}]/gu, '')   // emoji block 2
-        .replace(/[\u{FE00}-\u{FEFF}]/gu, '')   // variation selectors
-        .replace(/\s{2,}/g, ' ')                // collapse extra spaces
-        .trim();
-    },
-
-    speak(text, onEnd) {
-      if (!this.supported || !text) return;
-      const cleanText = this._cleanForSpeech(text);
-      window.speechSynthesis.cancel();
-      const utt = new SpeechSynthesisUtterance(cleanText);
-      utt.rate   = 0.92;
-      utt.pitch  = 1.05;
-      utt.volume = 1;
-      if (this.preferredVoice) utt.voice = this.preferredVoice;
-      if (onEnd) utt.onend = onEnd;
-      window.speechSynthesis.speak(utt);
-    },
-
-    stop() {
-      if (!this.supported) return;
-      window.speechSynthesis.cancel();
-    },
-
-    _splitSentences(text) {
-      const sentences = text.match(/[^.!?]+[.!?]+["'\u201d]?\s*/g);
-      if (!sentences || !sentences.length) return [text];
-      const joined = sentences.join('');
-      const remainder = text.slice(joined.length).trim();
-      if (remainder) sentences.push(remainder);
-      return sentences.map(s => s.trim()).filter(Boolean);
-    },
-
-    _splitWords(text) {
-      return text.split(/\s+/).filter(Boolean);
-    },
-
-    _makeUtt(text) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate   = 0.92;
-      utt.pitch  = 1.05;
-      utt.volume = 1;
-      if (this.preferredVoice) utt.voice = this.preferredVoice;
-      return utt;
-    },
-
-    speakWithReveal(text, element, onEnd) {
-      if (!this.supported || !text) {
-        element.textContent = text;
-        if (onEnd) onEnd();
-        return;
-      }
-      // Clean text for speech, but keep original for display
-      const cleanText = this._cleanForSpeech(text);
-      window.speechSynthesis.cancel();
-      element.textContent = '';
-
-      // ── Block mode ───────────────────────────────────────────────────────
-      if (textReveal === 'block') {
-        element.textContent = text;       // display original (with formatting)
-        this.speak(text, onEnd);          // speak cleaned version
-        return;
-      }
-
-      // ── Sentence mode ────────────────────────────────────────────────────
-      if (textReveal === 'sentence') {
-        const sentences     = this._splitSentences(text);
-        const cleanSentences = this._splitSentences(cleanText);
-        let revealed = '';
-        let i = 0;
-
-        const speakNext = () => {
-          if (i >= sentences.length) {
-            element.textContent = text;
-            if (onEnd) onEnd();
-            return;
-          }
-          const displaySentence = sentences[i];
-          const speechSentence  = cleanSentences[i] || displaySentence;
-          i++;
-          revealed += (revealed ? ' ' : '') + displaySentence;
-          element.textContent = revealed;
-
-          const utt = this._makeUtt(speechSentence);
-          utt.onend   = speakNext;
-          utt.onerror = () => { element.textContent = text; if (onEnd) onEnd(); };
-          window.speechSynthesis.speak(utt);
-        };
-
-        speakNext();
-        return;
-      }
-
-      // ── Word mode ────────────────────────────────────────────────────────
-      if (textReveal === 'word') {
-        const words    = this._splitWords(text);
-        const msPerWord = Math.round(60000 / (130 * 0.92) * 0.83); // ≈ 417ms
-
-        let wordIndex = 0;
-        let timer = null;
-
-        const revealNext = () => {
-          if (wordIndex >= words.length) {
-            element.textContent = text;
-            clearInterval(timer);
-            return;
-          }
-          wordIndex++;
-          element.textContent = words.slice(0, wordIndex).join(' ');
-        };
-
-        const utt = this._makeUtt(cleanText); // speak clean text
-
-        utt.onstart = () => { timer = setInterval(revealNext, msPerWord); };
-        utt.onend   = () => { clearInterval(timer); element.textContent = text; if (onEnd) onEnd(); };
-        utt.onerror = () => { clearInterval(timer); element.textContent = text; if (onEnd) onEnd(); };
-
-        window.speechSynthesis.speak(utt);
-        return;
-      }
-
-      // Safety fallback
-      element.textContent = text;
-      this.speak(text, onEnd);
-    },
-
-    makeControls(text) {
-      const wrap = document.createElement('div');
-      wrap.className = 'mfsd-tts-controls';
-
-      const speakBtn = document.createElement('button');
-      speakBtn.className = 'mfsd-tts-btn mfsd-tts-speak';
-      speakBtn.title = 'Listen';
-      speakBtn.innerHTML = '🔊';
-      speakBtn.onclick = (e) => { e.stopPropagation(); mfsdTTS.speak(text); };
-
-      const stopBtn = document.createElement('button');
-      stopBtn.className = 'mfsd-tts-btn mfsd-tts-stop';
-      stopBtn.title = 'Stop';
-      stopBtn.innerHTML = '⏹';
-      stopBtn.onclick = (e) => { e.stopPropagation(); mfsdTTS.stop(); };
-
-      wrap.appendChild(speakBtn);
-      wrap.appendChild(stopBtn);
-      return wrap;
-    }
-  };
-
-  mfsdTTS.init();
-  // ============================================================================
-
-  // Admin settings
-  const convMode   = (cfg.conversationMode || 'polite');
-  const textReveal = (cfg.textReveal || 'block');
-  // ============================================================================
-  const mfsdSTT = {
-    supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
-    recognition: null,
-    isListening: false,
-    _silenceTimer: null,
-    _silenceDelay: 2000, // ms of silence before auto-sending
-    _onFinalCb: null,
-    _onInterimCb: null,
-    _onErrorCb: null,
-    _accumulated: '',   // builds up the full sentence across multiple result events
-
-    init() {
-    // Instance is created fresh in each listen() call — nothing needed here
-    },
-
-   listen(onInterim, onFinal, onError) {
-  if (!this.supported) {
-    onError('Speech recognition is not supported in this browser.');
-    return;
-  }
-  if (this.isListening) { this.stop(); return; }
-
-  if (convMode === 'polite') mfsdTTS.stop();
-
-  this._onInterimCb = onInterim;
-  this._onFinalCb   = onFinal;
-  this._onErrorCb   = onError;
-  this._accumulated = '';
-  this._interrupted = false;
-  this.isListening  = true;
-
-  // Recreate recognition instance fresh each time — reusing the same
-  // instance after stop() is unreliable in Chrome and causes silent failures
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  this.recognition = new SR();
-  this.recognition.lang = 'en-GB';
-  this.recognition.interimResults = true;
-  this.recognition.maxAlternatives = 1;
-  this.recognition.continuous = true;
-
-  this.recognition.onresult = (e) => {
-    if (convMode === 'normal' && !this._interrupted) {
-      this._interrupted = true;
-      mfsdTTS.stop();
-    }
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) {
-        this._accumulated += (this._accumulated ? ' ' : '') + t.trim();
-      } else {
-        interim = t;
-      }
-    }
-    const display = this._accumulated + (interim ? ' ' + interim : '');
-    if (this._onInterimCb) this._onInterimCb(display.trim());
-    clearTimeout(this._silenceTimer);
-    this._silenceTimer = setTimeout(() => {
-      const finalText = this._accumulated || display.trim();
-      this.stop();
-      if (finalText && this._onFinalCb) this._onFinalCb(finalText.trim());
-    }, this._silenceDelay);
-  };
-
-  this.recognition.onerror = (e) => {
-    this._cleanup();
-    const msgs = {
-      'not-allowed'  : 'Microphone access was denied. Please allow microphone permission and try again.',
-      'no-speech'    : 'No speech was detected. Please try again.',
-      'network'      : 'A network error occurred. Please check your connection.',
-      'audio-capture': 'No microphone was found on this device.',
-    };
-    if (this._onErrorCb) this._onErrorCb(msgs[e.error] || 'Speech recognition error: ' + e.error);
-  };
-
-  this.recognition.onend = () => {
-    this.isListening = false;
-  };
-
-  try {
-    this.recognition.start();
-  } catch(e) {
-    this._cleanup();
-    onError('Could not start microphone: ' + e.message);
-  }
-},
-
-    stop() {
-      clearTimeout(this._silenceTimer);
-      if (this.recognition) {
-        try { this.recognition.stop(); } catch(e) {}
-      }
-      this.isListening = false;
-    },
-
-    _cleanup() {
-      clearTimeout(this._silenceTimer);
-      this.isListening  = false;
-      this._accumulated = '';
-    }
-  };
-
-  mfsdSTT.init();
-  // ============================================================================
-  
-  let questions = [];
-  let idx = 0;
-  let stack = [];
-
-  const el = (t, c, txt) => {
-    const n = document.createElement(t);
-    if (c) n.className = c;
-    if (txt !== undefined) n.textContent = txt;
-    return n;
-  };
-
-  // Check if week is already completed or in progress
-  async function checkWeekStatus() {
-    console.log('Checking status for week:', week);
-    try {
-      const res = await fetch(cfg.restUrlStatus + "?week=" + encodeURIComponent(week), {
-        method: 'GET',
-        headers: {
-          'X-WP-Nonce': cfg.nonce || '',
-          'Accept': 'application/json'
-        },
-        credentials: 'same-origin'
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        console.log('Status response:', data);
-        return data;
-      }
-    } catch (err) {
-      console.error('Status check error:', err);
-    }
-    return { status: 'not_started', can_start: true };
-  }
-
-  async function renderIntro() {
-    console.log('renderIntro called, week =', week);
-    
-    // Check status and permissions
-    const status = await checkWeekStatus();
-    
-    // Check if user can start this week
-    if (!status.can_start && status.blocking_week) {
-      const wrap = el("div","rag-wrap");
-      const card = el("div","rag-card");
-      card.appendChild(el("h2","rag-title","Week " + week + " — Not Available"));
-      
-      const msg = el("p","rag-error-msg",
-        "Please complete Week " + status.blocking_week + " before starting Week " + week + ".");
-      card.appendChild(msg);
-      
-      const backBtn = el("button","rag-btn","Back");
-      backBtn.onclick = () => window.history.back();
-      card.appendChild(backBtn);
-      
-      wrap.appendChild(card);
-      root.replaceChildren(wrap);
-      return;
-    }
-    
-    // If completed, go straight to summary
-    if (status.status === 'completed') {
-      await renderSummary();
-      return;
-    }
-    
-    // If in progress, resume from where they left off
-    if (status.status === 'in_progress') {
-      await loadQuestions();
-      await resumeFromLastQuestion(status.last_question_id, status.answered_question_ids || []);
-      return;
-    }
-
-    // Otherwise show intro for new start
-    const wrap = el("div","rag-wrap");
-    const card = el("div","rag-card");
-    card.appendChild(el("h2","rag-title","Week " + week + " — RAG + MBTI Tracker"));
-
-    // Show previous week summary for weeks 2-6
-    if (status.previous_week_summary) {
-      const prevSummary = status.previous_week_summary;
-      const summaryBox = el("div","rag-prev-week-summary");
-      summaryBox.style.cssText = "background: #f0f8ff; border-left: 4px solid #4a90e2; padding: 12px 14px; border-radius: 6px; margin: 12px 0;";
-      
-      const summaryTitle = el("div","rag-prev-week-title");
-      summaryTitle.style.cssText = "font-weight: 600; margin-bottom: 6px; color: #2c3e50;";
-      summaryTitle.textContent = "Last Week (Week " + prevSummary.week + ") Results:";
-      summaryBox.appendChild(summaryTitle);
-      
-      const stats = el("div","rag-prev-stats");
-      stats.style.cssText = "display: flex; gap: 12px; margin: 8px 0; flex-wrap: wrap;";
-      
-      const greenStat = el("div","stat");
-      greenStat.style.cssText = "background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; padding: 6px 10px; font-size: 14px;";
-      greenStat.textContent = "🟢 Greens: " + prevSummary.greens;
-      stats.appendChild(greenStat);
-      
-      const amberStat = el("div","stat");
-      amberStat.style.cssText = "background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 6px 10px; font-size: 14px;";
-      amberStat.textContent = "🟠 Ambers: " + prevSummary.ambers;
-      stats.appendChild(amberStat);
-      
-      const redStat = el("div","stat");
-      redStat.style.cssText = "background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 6px; padding: 6px 10px; font-size: 14px;";
-      redStat.textContent = "🔴 Reds: " + prevSummary.reds;
-      stats.appendChild(redStat);
-      
-      if (prevSummary.mbti_type) {
-        const mbtiStat = el("div","stat");
-        mbtiStat.style.cssText = "background: #e8f4fd; border: 1px solid #b8daff; border-radius: 6px; padding: 6px 10px; font-size: 14px; font-weight: 600;";
-        mbtiStat.textContent = "MBTI: " + prevSummary.mbti_type;
-        stats.appendChild(mbtiStat);
-      }
-      
-      summaryBox.appendChild(stats);
-      card.appendChild(summaryBox);
-    }
-
-    // Show AI-generated intro message if available
-    if (status.intro_message) {
-      const introBox = el("div","rag-ai-intro");
-      introBox.style.cssText = "background: #fff8e6; border: 1px solid #ffd966; border-left: 4px solid #f0ad4e; padding: 12px 14px; border-radius: 6px; line-height: 1.6; margin: 12px 0; font-size: 14px; color: #333;";
-      introBox.textContent = status.intro_message;
-      card.appendChild(introBox);
-    } else {
-      // Fallback to static text if no AI message
-      const p = el("p","rag-sub",
-        "High Performance Pathway RAG + MBTI Weekly Tracker.\n" +
-        "Greens = strengths ; Ambers = mixed ; Reds = needs support.\n");
-      card.appendChild(p);
-    }
-
-    const btn = el("button","rag-btn","Begin RAG");
-    btn.onclick = async () => {
-      await loadQuestions();
-      idx = 0; 
-      stack = [];
-      await renderQuestion();
-    };
-    card.appendChild(btn);
-
-    wrap.appendChild(card);
-    root.replaceChildren(wrap);
-  }
-
-  async function resumeFromLastQuestion(lastQuestionId, answeredIds) {
-    console.log('=== RESUME FUNCTION START ===');
-    console.log('Last question ID from DB:', lastQuestionId);
-    console.log('Answered question IDs:', answeredIds);
-    console.log('Total questions loaded:', questions.length);
-    console.log('All question IDs:', questions.map(q => q.id));
-    
-    // Find the first unanswered question
-    let firstUnansweredIdx = -1;
-    for (let i = 0; i < questions.length; i++) {
-      const questionId = parseInt(questions[i].id);
-      const isAnswered = answeredIds.includes(questionId);
-      console.log(`Question ${i + 1} (ID: ${questionId}): ${isAnswered ? 'ANSWERED' : 'NOT ANSWERED'}`);
-      
-      if (!isAnswered) {
-        firstUnansweredIdx = i;
-        console.log('Found first unanswered question at index:', firstUnansweredIdx);
-        break;
-      }
-    }
-    
-    if (firstUnansweredIdx >= 0) {
-      // Start from the first unanswered question
-      idx = firstUnansweredIdx;
-      console.log('Resuming from first unanswered question at index:', idx, 'Question ID:', questions[idx].id);
-      stack = [];
+    // Red answer on a RAG question → show improvement plan screen first
+    if (answer === 'R' && q.q_type === 'RAG') {
+      await renderRedFollowup(q, idx);
+    } else if (idx < questions.length - 1) {
+      idx++;
       await renderQuestion();
     } else {
-      // All questions answered, show summary
-      console.log('All questions have been answered, showing summary');
       await renderSummary();
     }
-    
-    console.log('=== RESUME FUNCTION END ===');
-  }
 
-  async function loadQuestions() {
-    console.log('Loading questions for week:', week);
-    const url = cfg.restUrlQuestions + "?week=" + encodeURIComponent(week);
+// ============================================================================
+// CHANGE 2 — Add this entire function just before the closing renderIntro() call
+//            (i.e. just before the last line of the IIFE: "renderIntro();")
+// ============================================================================
 
+  async function renderRedFollowup(q, savedIdx) {
+    showQuestionLoading('Loading your action plan...');
+
+    // Fetch AI suggestions + previous plan data from server
+    let suggestionData = null;
     try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'X-WP-Nonce': cfg.nonce || '',
-          'Accept': 'application/json'
-        },
-        credentials: 'same-origin'
-      });
-
-      if (!res.ok) throw new Error("HTTP " + res.status);
-
-      const data = await res.json();
-      console.log('Questions response:', data);
-      if (!data || !data.ok) throw new Error(data && data.error ? data.error : 'Failed');
-
-      questions = data.questions || [];
-      console.log('Loaded ' + questions.length + ' questions');
-    } catch (err) {
-      console.error('Error loading questions', err);
-      alert('Loading questions failed: ' + err.message);
-      throw err;
-    }
-  }
-
-  async function renderQuestion() {
-    showQuestionLoading(); // Show loading while building the question
-    
-    const q = questions[idx];
-    const wrap = el("div","rag-wrap");
-    const card = el("div","rag-card");
-
-    const pos = el("div","rag-pos", "Question " + (idx+1) + " of " + questions.length);
-    const text = el("div","rag-qtext", q.q_text);
-    card.appendChild(pos);
-    card.appendChild(text);
-
-
-
-    // Check if this is a DISC question
-    if (q.q_type === 'DISC') {
-        // DISC uses 1-5 Likert scale
-        const scaleContainer = el("div", "disc-scale-container");
-        scaleContainer.style.cssText = "margin: 20px 0;";
-        
-        const scaleLabel = el("div", "disc-scale-label");
-        scaleLabel.style.cssText = "text-align: center; margin-bottom: 12px; font-weight: 600; color: #555;";
-        scaleLabel.textContent = "How much do you agree with this statement?";
-        scaleContainer.appendChild(scaleLabel);
-        
-        const lights = el("div", "rag-lights");
-        lights.style.cssText = "display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;";
-        
-        const options = [
-            { label: "Completely Disagree", value: 1, color: "#d9534f", emoji: "👎" },
-            { label: "Somewhat Disagree", value: 2, color: "#f0ad4e", emoji: "🤔" },
-            { label: "Neutral", value: 3, color: "#9e9e9e", emoji: "😐" },
-            { label: "Somewhat Agree", value: 4, color: "#5cb85c", emoji: "👍" },
-            { label: "Completely Agree", value: 5, color: "#4caf50", emoji: "💯" }
-        ];
-        
-        options.forEach(opt => {
-            const btn = el("button", "rag-light disc-scale-btn");
-            btn.style.cssText = `
-                background: ${opt.color};
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 16px 12px;
-                cursor: pointer;
-                font-weight: 600;
-                font-size: 13px;
-                min-width: 90px;
-                transition: all 0.2s;
-                white-space: pre-line;
-                text-align: center;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 6px;
-            `;
-            
-            const emoji = el("span", "");
-            emoji.style.cssText = "font-size: 24px;";
-            emoji.textContent = opt.emoji;
-            btn.appendChild(emoji);
-            
-            const label = el("span", "");
-            label.style.cssText = "font-size: 12px; line-height: 1.3;";
-            label.textContent = opt.label;
-            btn.appendChild(label);
-            
-            btn.onmouseover = () => {
-                btn.style.transform = "translateY(-3px)";
-                btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
-            };
-            btn.onmouseout = () => {
-                btn.style.transform = "translateY(0)";
-                btn.style.boxShadow = "none";
-            };
-            
-            // THIS IS THE KEY PART - sends disc_answer parameter
-            btn.onclick = async () => {
-                showQuestionLoading('Saving your answer...');
-                
-                try {
-                    
-                    // Parse disc_mapping if it's a JSON string
-                    let mapping = q.disc_mapping;
-                  if (typeof mapping === 'string') {
-                   try {
-                       mapping = JSON.parse(mapping);
-                       } catch (e) {
-                          hideQuestionLoading();
-                          alert('Error: Invalid DISC question data.');
-                          console.error('Failed to parse disc_mapping:', mapping);
-                          return;
-                        }
-                    }
-                    
-                    // Verify mapping has required properties
-                    if (!mapping || !mapping.hasOwnProperty('D')) {
-                        hideQuestionLoading();
-                        alert('Error: DISC question missing mapping data.');
-                        console.error('Invalid mapping:', mapping);
-                        return;
-                    }
-
-                    const contribution = opt.value - 3;
-                    
-                    const payload = {
-                        week: week,
-                        question_id: q.id,
-                        q_type: 'DISC',
-                        disc_answer: opt.value,  // Send as disc_answer
-                        d_contribution: mapping.D * contribution,
-                        i_contribution: mapping.I * contribution,
-                        s_contribution: mapping.S * contribution,
-                        c_contribution: mapping.C * contribution
-                    };
-                    
-                    const res = await fetch(cfg.restUrlAnswer, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-WP-Nonce': cfg.nonce || ''
-                        },
-                        credentials: 'same-origin',
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    if (!res.ok) throw new Error('Failed to save answer');
-                    
-                    const data = await res.json();
-                    if (!data.ok) throw new Error(data.error || 'Failed');
-                    
-                    hideQuestionLoading();
-                    
-                    // Move to next question
-                    idx++;
-                    if (idx < questions.length) {
-                        await renderQuestion();
-                    } else {
-                        await renderSummary();
-                    }
-                    
-                } catch (err) {
-                    hideQuestionLoading();
-                    console.error('Error saving DISC answer:', err);
-                    alert('Error saving answer: ' + err.message);
-                }
-            };
-            
-            lights.appendChild(btn);
-        });
-        
-        scaleContainer.appendChild(lights);
-        card.appendChild(scaleContainer);
-        
-        wrap.appendChild(card);
-        root.replaceChildren(wrap);
-        
-        hideQuestionLoading(); // If you have this
-        return; // EXIT HERE - don't render RAG buttons
-    }
-    
-    // ============ END DISC CHECK ============
-
-    // Show previous weeks' answers for weeks 2-6 (for both RAG and MBTI)
-    if (week > 1) {
-      try {
-        const prevRes = await fetch(
-          cfg.restUrlPrevious + "?week=" + week + "&question_id=" + q.id,
-          {
-            method: 'GET',
-            headers: {
-              'X-WP-Nonce': cfg.nonce || '',
-              'Accept': 'application/json'
-            },
-            credentials: 'same-origin'
-          }
-        );
-        
-        if (prevRes.ok) {
-          const prevData = await prevRes.json();
-          console.log('Previous answers for question', q.id, ':', prevData);
-          if (prevData.ok && prevData.previous && prevData.previous.length > 0) {
-            const prevDiv = el("div","rag-prev");
-            let prevText = "Previous answers: ";
-            prevData.previous.forEach(function(p) {
-              const color = p.answer === 'R' ? '🔴' : (p.answer === 'A' ? '🟠' : '🟢');
-              prevText += "Week " + p.week_num + ": " + color + " ";
-            });
-            prevDiv.textContent = prevText;
-            card.appendChild(prevDiv);
-          }
-        }
-      } catch (err) {
-        console.error('Error loading previous answers:', err);
-      }
-    }
-
-    // Generate AI guidance for ALL questions (RAG and MBTI)
-    const aiGuidanceDiv = el("div", "rag-ai-question");
-    aiGuidanceDiv.innerHTML = '<em>Loading question guidance...</em>';
-    card.appendChild(aiGuidanceDiv);
-
-    try {
-      const guidanceRes = await fetch(cfg.restUrlGuidance, {
+      const res = await fetch(cfg.restUrlRedSuggestions, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-WP-Nonce': cfg.nonce || ''
-        },
+        headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce || '' },
         credentials: 'same-origin',
-        body: JSON.stringify({
-          week: week,
-          question_id: q.id
-        })
+        body: JSON.stringify({ week: week, question_id: q.id })
       });
-
-      if (guidanceRes.ok) {
-        const guidanceData = await guidanceRes.json();
-        if (guidanceData.ok && guidanceData.guidance) {
-          // Use a child span for the text so TTS controls sibling isn't wiped
-          const guidanceText = document.createElement('span');
-          aiGuidanceDiv.innerHTML = '';
-          aiGuidanceDiv.appendChild(guidanceText);
-          if (mfsdTTS.supported) {
-            aiGuidanceDiv.appendChild(mfsdTTS.makeControls(guidanceData.guidance));
-            mfsdTTS.speakWithReveal(guidanceData.guidance, guidanceText);
-          } else {
-            guidanceText.textContent = guidanceData.guidance;
-          }
-        } else {
-          aiGuidanceDiv.innerHTML = '<em>Question guidance unavailable.</em>';
-        }
-      }
-    } catch (err) {
-      console.error('Error loading guidance:', err);
-      aiGuidanceDiv.innerHTML = '<em>Question guidance unavailable.</em>';
+      if (res.ok) suggestionData = await res.json();
+    } catch(err) {
+      console.error('Red suggestions error:', err);
     }
 
-    // Add custom AI chatbot for deeper questions
-    const chatWrap = el("div","rag-chatwrap");
-    
-    // Chat history container
-    const chatHistory = el("div", "rag-chat-history");
-    chatHistory.style.cssText = "max-height: 420px; overflow-y: auto; margin-bottom: 12px; padding: 10px; background: #f5f5f5; border-radius: 6px; scroll-behavior: smooth;";
-    
-    // Initial AI message
-    const initialMsg = el("div", "rag-chat-msg ai-msg");
-    initialMsg.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; border-left: 3px solid #2196f3;";
-    const initialText = "Hi! How can I help you with this question?";
-    initialMsg.textContent = initialText;
+    hideQuestionLoading();
+
+    // Fallbacks if fetch failed
+    const steveIntro   = suggestionData?.steve_intro  || "Thanks for being honest — let's make a plan to move this forward!";
+    const suggestions  = suggestionData?.suggestions  || [];
+    const prevPlans    = suggestionData?.prev_plans   || [];
+    const wordTarget   = suggestionData?.word_target  || (cfg.redPlanMode === 'fixed-100' ? 100 : 50);
+
+    const wrap = el("div", "rag-wrap");
+    const card = el("div", "rag-card");
+
+    // ── Context header ────────────────────────────────────────────────────
+    const header = el("div");
+    header.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:12px;";
+
+    const qInfo = el("div");
+    const qLabel = el("div", "rag-pos", "Question " + (savedIdx + 1) + " of " + questions.length + " — " + q.q_text);
+    qInfo.appendChild(qLabel);
+
+    const redBadge = el("div");
+    redBadge.style.cssText = "display:inline-flex;align-items:center;gap:6px;background:#FCEBEB;color:#A32D2D;font-size:12px;font-weight:500;padding:4px 10px;border-radius:6px;border:0.5px solid #F7C1C1;white-space:nowrap;flex-shrink:0;";
+    redBadge.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:#E24B4A;display:inline-block;"></span> You answered Red';
+
+    header.appendChild(qInfo);
+    header.appendChild(redBadge);
+    card.appendChild(header);
+
+    // ── Previous plan (if one exists from last week) ──────────────────────
+    if (prevPlans.length > 0) {
+      const lastPlan = prevPlans[0];
+      const prevBox = el("div");
+      prevBox.style.cssText = "background:#fff8e6;border:0.5px solid #ffd966;border-left:3px solid #f0ad4e;border-radius:0 6px 6px 0;padding:12px 14px;margin-bottom:14px;";
+      const prevTitle = el("div");
+      prevTitle.style.cssText = "font-size:12px;font-weight:500;color:#856404;margin-bottom:5px;";
+      prevTitle.textContent = "Your plan from Week " + lastPlan.week_num;
+      const prevText = el("div");
+      prevText.style.cssText = "font-size:13px;color:#333;line-height:1.6;";
+      prevText.textContent = lastPlan.plan_text;
+      prevBox.appendChild(prevTitle);
+      prevBox.appendChild(prevText);
+      card.appendChild(prevBox);
+    }
+
+    // ── SteveGPT intro bubble ─────────────────────────────────────────────
+    const steveSection = el("div", "rag-card");
+    steveSection.style.cssText = "background:#E6F1FB;border:0.5px solid #B5D4F4;padding:16px;margin-bottom:0;";
+
+    const steveName = el("div");
+    steveName.style.cssText = "font-size:12px;font-weight:500;color:#185FA5;margin-bottom:6px;";
+    steveName.textContent = "SteveGPT";
+
+    const steveText = el("div");
+    steveText.style.cssText = "font-size:14px;color:#1d2327;line-height:1.6;";
     if (mfsdTTS.supported) {
-      initialMsg.appendChild(mfsdTTS.makeControls(initialText));
+      const steveSpan = document.createElement('span');
+      steveSection.appendChild(steveName);
+      steveSection.appendChild(steveText);
+      mfsdTTS.speakWithReveal(steveIntro, steveSpan, null);
+      steveText.appendChild(steveSpan);
+      steveSection.appendChild(mfsdTTS.makeControls(steveIntro));
+    } else {
+      steveText.textContent = steveIntro;
+      steveSection.appendChild(steveName);
+      steveSection.appendChild(steveText);
     }
-    chatHistory.appendChild(initialMsg);
-    
-    chatWrap.appendChild(chatHistory);
-    
-    // Input container
-    const inputContainer = el("div");
-    inputContainer.style.cssText = "display: flex; gap: 8px; align-items: flex-end;";
-    
+
+    // ── Suggestions ───────────────────────────────────────────────────────
+    if (suggestions.length > 0) {
+      const sugLabel = el("div");
+      sugLabel.style.cssText = "font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.04em;color:#666;margin:14px 0 8px;";
+      sugLabel.textContent = "Some ideas to get you started";
+      steveSection.appendChild(sugLabel);
+
+      suggestions.forEach((sug, i) => {
+        const sugRow = el("div");
+        sugRow.style.cssText = "display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
+        sugRow.title = "Tap to copy into your plan";
+
+        const num = el("div");
+        num.style.cssText = "font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;";
+        num.textContent = (i + 1) + ".";
+
+        const txt = el("div");
+        txt.style.cssText = "font-size:13px;color:#333;line-height:1.5;";
+        txt.textContent = sug;
+
+        const hint = el("div");
+        hint.style.cssText = "font-size:11px;color:#aaa;margin-top:3px;";
+        hint.textContent = "Tap to copy into your plan";
+
+        const inner = el("div"); inner.appendChild(txt); inner.appendChild(hint);
+        sugRow.appendChild(num); sugRow.appendChild(inner);
+
+        sugRow.addEventListener('click', () => {
+          planTextarea.value = (planTextarea.value.trim() ? planTextarea.value.trim() + ' ' : '') + sug;
+          updateWordCount();
+          planTextarea.focus();
+          hint.textContent = "Copied!";
+          setTimeout(() => { hint.textContent = "Tap to copy into your plan"; }, 2000);
+        });
+
+        steveSection.appendChild(sugRow);
+      });
+    }
+
+    card.appendChild(steveSection);
+
+    // ── Chat with SteveGPT for more ideas ────────────────────────────────
+    const chatSection = el("div", "rag-chatwrap");
+    chatSection.style.marginTop = "14px";
+
+    const chatLabel = el("div");
+    chatLabel.style.cssText = "font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.04em;color:#666;margin-bottom:8px;";
+    chatLabel.textContent = "Ask SteveGPT for more ideas";
+
+    const chatHistory = el("div", "rag-chat-history");
+    chatHistory.style.cssText = "max-height:260px;overflow-y:auto;margin-bottom:10px;padding:10px;background:#f5f5f5;border-radius:6px;scroll-behavior:smooth;";
+
+    chatSection.appendChild(chatLabel);
+    chatSection.appendChild(chatHistory);
+
+    // Chat input row
+    const chatInputRow = el("div");
+    chatInputRow.style.cssText = "display:flex;gap:8px;align-items:flex-end;";
+
     const chatInput = document.createElement("textarea");
-    chatInput.rows = 2;
-    chatInput.placeholder = "Ask about this question...";
-    chatInput.style.cssText = "flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; resize: none; font-family: inherit; line-height: 1.4;";
-    
-    const sendBtn = el("button", "rag-btn", "Send");
-    sendBtn.style.cssText = "padding: 10px 20px; white-space: nowrap;";
+    chatInput.rows = 1;
+    chatInput.placeholder = "Ask a follow-up question…";
+    chatInput.style.cssText = "flex:1;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;resize:none;font-family:inherit;line-height:1.4;";
 
-    // Mic button — only rendered if STT is supported
-    // Persistent conversation mode flag — true once mic is first activated
-    let conversationMode = false;
+    const chatSendBtn = el("button", "rag-btn", "Send");
+    chatSendBtn.style.cssText = "padding:9px 16px;white-space:nowrap;";
 
-    // Helper: start a fresh listen cycle (used on first click and after each AI reply)
-    function startListening() {
-      if (!mfsdSTT.supported || !micBtn) return;
+    // Chat mic
+    let chatMicBtn = null;
+    let chatConvMode = false;
+
+    const startChatListening = () => {
+      if (!mfsdSTT.supported || !chatMicBtn) return;
       chatInput.value = "";
       chatInput.placeholder = "Listening…";
-      micBtn.classList.add("mfsd-mic-active");
-      micBtn.title = "Tap to end conversation";
-      micBtn.innerHTML = "🎤";
-
+      chatMicBtn.classList.add("mfsd-mic-active");
       mfsdSTT.listen(
-        // interim — live transcription in input
-        (text) => { chatInput.value = text; },
-        // final — send, then restart listening automatically after AI replies
-        (text) => {
-          chatInput.value = text;
-          sendMessage();
-        },
-        // error
+        (t) => { chatInput.value = t; },
+        (t) => { chatInput.value = t; sendChatMessage(); },
         (msg) => {
-          chatInput.placeholder = "Ask about this question...";
-          const errEl = el("div", "rag-chat-msg error-msg");
-          errEl.style.cssText = "margin-bottom:10px; padding:8px 12px; background:#ffebee; border-radius:8px; border-left:3px solid #f44336; font-size:13px;";
-          errEl.textContent = "🎤 " + msg;
-          chatHistory.appendChild(errEl);
-          chatHistory.scrollTop = chatHistory.scrollHeight;
-          // On error, stay in conversation mode but idle — user can speak again
-          if (conversationMode) {
-            setTimeout(() => startListening(), 800);
-          }
+          chatInput.placeholder = "Ask a follow-up question…";
+          if (chatConvMode) setTimeout(() => startChatListening(), 800);
         }
       );
-    }
+    };
 
-    function stopConversation() {
-      conversationMode = false;
-      mfsdSTT.stop();
-      if (micBtn) {
-        micBtn.classList.remove("mfsd-mic-active");
-        micBtn.title = "Start voice conversation";
-        micBtn.innerHTML = "🎤";
-      }
-      chatInput.placeholder = "Ask about this question...";
-      chatInput.value = "";
-    }
-
-    let micBtn = null;
     if (mfsdSTT.supported) {
-      micBtn = document.createElement("button");
-      micBtn.type = "button";
-      micBtn.className = "mfsd-mic-btn";
-      micBtn.title = "Start voice conversation";
-      micBtn.innerHTML = "🎤";
-
-      micBtn.addEventListener("click", () => {
-        if (conversationMode) {
-          // Second tap — end the conversation
-          stopConversation();
-        } else {
-          // First tap — enter conversation mode
-          conversationMode = true;
-          startListening();
-        }
+      chatMicBtn = document.createElement("button");
+      chatMicBtn.type = "button"; chatMicBtn.className = "mfsd-mic-btn";
+      chatMicBtn.title = "Speak your question"; chatMicBtn.innerHTML = "🎤";
+      chatMicBtn.addEventListener("click", () => {
+        chatConvMode = !chatConvMode;
+        if (chatConvMode) startChatListening();
+        else { mfsdSTT.stop(); chatMicBtn.classList.remove("mfsd-mic-active"); chatInput.placeholder = "Ask a follow-up question…"; }
       });
     }
-    
-    // Send message function
-    const sendMessage = async () => {
-      const userMsg = chatInput.value.trim();
-      if (!userMsg) return;
-      
-      // Add user message to history
-      const userMsgEl = el("div", "rag-chat-msg user-msg");
-      userMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #fff; border-radius: 8px; border-left: 3px solid #666; text-align: left;";
-      userMsgEl.textContent = userMsg;
-      chatHistory.appendChild(userMsgEl);
-      
-      // Clear input
-      chatInput.value = "";
-      chatInput.placeholder = conversationMode ? "Waiting for AI reply…" : "Ask about this question...";
-      sendBtn.disabled = true;
-      sendBtn.textContent = "Sending...";
+
+    const sendChatMessage = async () => {
+      const msg = chatInput.value.trim();
+      if (!msg) return;
+      const userEl = el("div", "rag-chat-msg user-msg");
+      userEl.style.cssText = "margin-bottom:8px;padding:8px 12px;background:#fff;border-radius:8px;border-left:3px solid #666;text-align:left;font-size:13px;";
+      userEl.textContent = msg;
+      chatHistory.appendChild(userEl);
+      chatInput.value = ""; chatInput.placeholder = "Waiting…"; chatSendBtn.disabled = true;
       chatHistory.scrollTop = chatHistory.scrollHeight;
-      
+
       try {
-        const response = await fetch(cfg.restUrlQuestionChat, {
+        const res = await fetch(cfg.restUrlQuestionChat, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-WP-Nonce': cfg.nonce || ''
-          },
+          headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce || '' },
           credentials: 'same-origin',
-          body: JSON.stringify({
-            week: week,
-            question_id: q.id,
-            message: userMsg
-          })
+          body: JSON.stringify({ week, question_id: q.id, message: msg, is_red_followup: true })
         });
-        
-        if (response.ok) {
-          const data = await response.json();
+        if (res.ok) {
+          const data = await res.json();
           if (data.ok && data.response) {
-            const aiMsgEl = el("div", "rag-chat-msg ai-msg");
-            aiMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; border-left: 3px solid #2196f3;";
-            const aiMsgText = document.createElement('span');
-            aiMsgEl.appendChild(aiMsgText);
-            chatHistory.appendChild(aiMsgEl);
+            const aiEl = el("div", "rag-chat-msg ai-msg");
+            aiEl.style.cssText = "margin-bottom:8px;padding:8px 12px;background:#e3f2fd;border-radius:8px;border-left:3px solid #2196f3;font-size:13px;";
+            const aiSpan = document.createElement('span');
+            aiEl.appendChild(aiSpan);
+            chatHistory.appendChild(aiEl);
             chatHistory.scrollTop = chatHistory.scrollHeight;
             if (mfsdTTS.supported) {
-              aiMsgEl.appendChild(mfsdTTS.makeControls(data.response));
-              if (mfsdTTS.enabled) {
-                if (convMode === 'polite') {
-                  mfsdTTS.speakWithReveal(data.response, aiMsgText, () => {
-                    if (conversationMode) startListening();
-                  });
-                } else {
-                  mfsdTTS.speakWithReveal(data.response, aiMsgText);
-                  if (conversationMode) startListening();
-                }
-              } else {
-                aiMsgText.textContent = data.response;
-                if (conversationMode) setTimeout(() => { if (conversationMode) startListening(); }, 500);
-              }
+              aiEl.appendChild(mfsdTTS.makeControls(data.response));
+              mfsdTTS.speakWithReveal(data.response, aiSpan, () => { if (chatConvMode) startChatListening(); });
             } else {
-              aiMsgText.textContent = data.response;
-              if (conversationMode) setTimeout(() => { if (conversationMode) startListening(); }, 500);
+              aiSpan.textContent = data.response;
+              if (chatConvMode) setTimeout(() => startChatListening(), 500);
             }
           }
-        } else {
-          throw new Error('Failed to get response');
         }
-      } catch (err) {
-        console.error('Chat error:', err);
-        const errorMsgEl = el("div", "rag-chat-msg error-msg");
-        errorMsgEl.style.cssText = "margin-bottom: 10px; padding: 8px 12px; background: #ffebee; border-radius: 8px; border-left: 3px solid #f44336;";
-        errorMsgEl.textContent = "Sorry, I couldn't process your message. Please try again.";
-        chatHistory.appendChild(errorMsgEl);
-        if (conversationMode) setTimeout(() => { if (conversationMode) startListening(); }, 800);
-      } finally {
-        sendBtn.disabled = false;
-        sendBtn.textContent = "Send";
-        if (!conversationMode) chatInput.focus();
+      } catch(err) { console.error('Red chat error:', err); }
+      finally { chatSendBtn.disabled = false; chatInput.placeholder = "Ask a follow-up question…"; }
+    };
+
+    chatSendBtn.onclick = sendChatMessage;
+    chatInput.onkeydown = (e) => { if (e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChatMessage();} };
+
+    chatInputRow.appendChild(chatInput);
+    if (chatMicBtn) chatInputRow.appendChild(chatMicBtn);
+    chatInputRow.appendChild(chatSendBtn);
+    chatSection.appendChild(chatInputRow);
+    card.appendChild(chatSection);
+
+    // ── Plan writing section ──────────────────────────────────────────────
+    const hr = el("hr"); hr.style.cssText = "border:none;border-top:0.5px solid #e5e5e5;margin:18px 0;";
+    card.appendChild(hr);
+
+    const planHeader = el("div");
+    planHeader.style.cssText = "display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;";
+
+    const planTitle = el("div");
+    planTitle.style.cssText = "font-size:15px;font-weight:500;color:#1d2327;";
+    planTitle.textContent = "Your plan to move from Red to Amber";
+
+    const wordCountDisplay = el("div");
+    wordCountDisplay.style.cssText = "text-align:right;font-size:12px;color:#666;line-height:1.5;";
+    wordCountDisplay.innerHTML = `Target: <strong style="font-weight:500;">${wordTarget} words</strong><br><span id="rf-word-count" style="color:#185FA5;font-weight:500;">0 / ${wordTarget}</span>`;
+
+    planHeader.appendChild(planTitle);
+    planHeader.appendChild(wordCountDisplay);
+    card.appendChild(planHeader);
+
+    const ageNote = el("div");
+    ageNote.style.cssText = "font-size:12px;color:#666;background:#f8f8f8;border-radius:6px;padding:8px 12px;margin-bottom:12px;border:0.5px solid #e5e5e5;";
+    ageNote.textContent = `Write your plan below — aim for ${wordTarget} words. You can type it, speak it using the mic below, or copy ideas from the suggestions above.`;
+    card.appendChild(ageNote);
+
+    // Word count progress bar
+    const barWrap = el("div");
+    barWrap.style.cssText = "height:4px;background:#e5e5e5;border-radius:2px;margin-bottom:14px;";
+    const barFill = el("div");
+    barFill.style.cssText = "height:100%;width:0%;background:#378ADD;border-radius:2px;transition:width 0.2s;";
+    barWrap.appendChild(barFill);
+    card.appendChild(barWrap);
+
+    const planTextarea = document.createElement("textarea");
+    planTextarea.rows = 4;
+    planTextarea.placeholder = "Write your plan here — what will you do this week to improve?";
+    planTextarea.style.cssText = "width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;font-family:inherit;line-height:1.6;resize:vertical;";
+    card.appendChild(planTextarea);
+
+    // Word count updater
+    const updateWordCount = () => {
+      const words = planTextarea.value.trim().split(/\s+/).filter(Boolean).length;
+      const pct   = Math.min(100, Math.round((words / wordTarget) * 100));
+      barFill.style.width = pct + '%';
+      barFill.style.background = words >= wordTarget ? '#5cb85c' : '#378ADD';
+      const display = document.getElementById('rf-word-count');
+      if (display) {
+        display.textContent = words + ' / ' + wordTarget;
+        display.style.color = words >= wordTarget ? '#3b6d11' : '#185FA5';
       }
+      saveBtn.disabled = words < wordTarget;
     };
-    
-    // Event listeners
-    sendBtn.onclick = sendMessage;
-    chatInput.onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    };
-    // If user starts typing manually while mic is on, pause conversation mode
-    chatInput.addEventListener('input', () => {
-      if (mfsdSTT.isListening) {
-        mfsdSTT.stop();
-        chatInput.placeholder = "Ask about this question...";
-        // Don't kill conversationMode — sendMessage will re-enable after reply
-      }
-    });
-    
-    inputContainer.appendChild(chatInput);
-    if (micBtn) inputContainer.appendChild(micBtn);
-    inputContainer.appendChild(sendBtn);
-    chatWrap.appendChild(inputContainer);
-    
-    card.appendChild(chatWrap);
+    planTextarea.addEventListener('input', updateWordCount);
 
-    const lights = el("div","rag-lights");
-    const choices = [
-      {key:'R', cls:'red',   label:'Red'},
-      {key:'A', cls:'amber', label:'Amber'},
-      {key:'G', cls:'green', label:'Green'},
-    ];
-    
-    for (let i = 0; i < choices.length; i++) {
-      const c = choices[i];
-      const b = el("button","rag-light " + c.cls, c.label);
-      b.onclick = () => {
-        // Stop conversation mode when student picks their RAG answer
-        stopConversation();
-        saveAnswer(q, c.key, b);
-      };
-      lights.appendChild(b);
-    }
-    card.appendChild(lights);
+    // Plan mic button
+    const planInputRow = el("div");
+    planInputRow.style.cssText = "display:flex;gap:8px;align-items:center;margin-top:10px;";
 
-    const actions = el("div","rag-actions");
-    const back = el("button","rag-btn secondary","Back");
-    back.disabled = (stack.length === 0);
-    back.onclick = () => {
-      if (!stack.length) return;
-      stack.pop();
-      idx = Math.max(0, idx - 1);
-      renderQuestion();
-    };
-    actions.appendChild(back);
-    card.appendChild(actions);
+    if (mfsdSTT.supported) {
+      const planMicBtn = document.createElement("button");
+      planMicBtn.type = "button"; planMicBtn.className = "mfsd-mic-btn";
+      planMicBtn.title = "Speak your plan"; planMicBtn.innerHTML = "🎤";
+      let planMicActive = false;
 
-    wrap.appendChild(card);
-    root.replaceChildren(wrap);
-    
-    hideQuestionLoading(); // Hide loading once everything is ready
-  }
-
-  function showQuestionLoading() {
-    const overlay = el("div", "rag-loading-overlay");
-    const spinner = el("div", "rag-spinner");
-    const text = el("div", "rag-loading-text", "Saving answer...");
-    overlay.appendChild(spinner);
-    overlay.appendChild(text);
-    document.body.appendChild(overlay);
-  }
-
-  function hideQuestionLoading() {
-    const overlay = document.querySelector(".rag-loading-overlay");
-    if (overlay) overlay.remove();
-  }
-
-  async function saveAnswer(q, answer, buttonElement) {
-    console.log('Saving answer for week:', week, 'question:', q.id, 'answer:', answer);
-    
-    // Disable all buttons and show loading
-    const allButtons = document.querySelectorAll('.rag-light, .rag-btn');
-    allButtons.forEach(function(btn) {
-      btn.disabled = true;
-      btn.style.opacity = '0.5';
-      btn.style.cursor = 'not-allowed';
-    });
-    
-    showQuestionLoading();
-    
-    const payload = {
-      week: week,
-      question_id: q.id,
-      rag: answer,
-    };
-
-    try {
-      const res = await fetch(cfg.restUrlAnswer, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "X-WP-Nonce": cfg.nonce || ''
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify(payload),
+      planMicBtn.addEventListener("click", () => {
+        planMicActive = !planMicActive;
+        if (planMicActive) {
+          planMicBtn.classList.add("mfsd-mic-active");
+          mfsdSTT.listen(
+            (t) => { planTextarea.value = t; updateWordCount(); },
+            (t) => { planTextarea.value = t; updateWordCount(); planMicActive = false; planMicBtn.classList.remove("mfsd-mic-active"); },
+            () => { planMicActive = false; planMicBtn.classList.remove("mfsd-mic-active"); }
+          );
+        } else {
+          mfsdSTT.stop();
+          planMicBtn.classList.remove("mfsd-mic-active");
+        }
       });
+      planInputRow.appendChild(planMicBtn);
+    }
 
-      const raw = await res.text();
-      console.log('Save response:', raw);
-      let j = null;
-      
+    const micHint = el("div");
+    micHint.style.cssText = "font-size:12px;color:#aaa;";
+    micHint.textContent = "Tap mic to speak your plan";
+    planInputRow.appendChild(micHint);
+    card.appendChild(planInputRow);
+
+    // Save button
+    const saveBtn = el("button", "rag-btn", "Save my plan and continue");
+    saveBtn.style.cssText = "width:100%;margin-top:14px;padding:12px;";
+    saveBtn.disabled = true;
+
+    saveBtn.onclick = async () => {
+      const planText = planTextarea.value.trim();
+      const words    = planText.split(/\s+/).filter(Boolean).length;
+      if (words < wordTarget) return;
+
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+
       try {
-        j = raw ? JSON.parse(raw) : null;
-      } catch (e) {
-        hideQuestionLoading();
-        alert("Server returned non-JSON: " + raw.slice(0, 200));
-        return;
+        await fetch(cfg.restUrlSaveRedPlan, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce || '' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ week, question_id: q.id, plan_text: planText })
+        });
+      } catch(err) {
+        console.error('Save red plan error:', err);
       }
 
-      if (!res.ok || !j || !j.ok) {
-        hideQuestionLoading();
-        alert("Save failed: " + ((j && j.error) || res.status + " " + res.statusText));
-        return;
-      }
+      // Stop any active mics / TTS
+      mfsdTTS.stop();
+      mfsdSTT.stop();
 
-      stack.push({ q: q, answer: answer });
-      
-      hideQuestionLoading();
-      
-      if (idx < questions.length - 1) {
-        idx++;
+      // Proceed to next question or summary
+      if (savedIdx < questions.length - 1) {
+        idx = savedIdx + 1;
         await renderQuestion();
       } else {
         await renderSummary();
       }
-    } catch (err) {
-      hideQuestionLoading();
-      console.error('Save error:', err);
-      alert('Failed to save answer: ' + err.message);
-    }
+    };
+
+    card.appendChild(saveBtn);
+
+    // Also call updateWordCount once to set initial state
+    updateWordCount();
+
+    wrap.appendChild(card);
+    root.replaceChildren(wrap);
   }
-
-  function showLoadingOverlay() {
-    const overlay = el("div", "rag-loading-overlay");
-    const spinner = el("div", "rag-spinner");
-    const text = el("div", "rag-loading-text", "Preparing Summary Results...");
-    overlay.appendChild(spinner);
-    overlay.appendChild(text);
-    document.body.appendChild(overlay);
-  }
-
-  function hideLoadingOverlay() {
-    const overlay = document.querySelector(".rag-loading-overlay");
-    if (overlay) overlay.remove();
-  }
-
-  async function renderSummary() {
-    console.log('=== renderSummary START ===');
-    console.log('Current week variable:', week);
-    
-    showLoadingOverlay();
-
-    try {
-      // Fetch current week summary
-      const summaryRes = await fetch(cfg.restUrlSummary, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-WP-Nonce': cfg.nonce || ''
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({ week: week })
-      });
-      
-      const summaryRaw = await summaryRes.text();
-      let summaryData = null;
-      
-      try { 
-        summaryData = summaryRaw ? JSON.parse(summaryRaw) : null; 
-      } catch(e) {
-        hideLoadingOverlay();
-        alert("Summary returned non-JSON: " + summaryRaw.slice(0, 200));
-        return;
-      }
-      
-      if (!summaryData || !summaryData.ok) {
-        hideLoadingOverlay();
-        alert("Summary failed: " + ((summaryData && summaryData.error) || summaryRaw.slice(0,200)));
-        return;
-      }
-
-      // Fetch all weeks data
-      const allWeeksRes = await fetch(cfg.restUrlAllWeeks + "?_=" + Date.now(), {
-        method: 'GET',
-        headers: {
-          'X-WP-Nonce': cfg.nonce || '',
-          'Accept': 'application/json'
-        },
-        credentials: 'same-origin'
-      });
-
-      let allWeeksData = null;
-      if (allWeeksRes.ok) {
-        allWeeksData = await allWeeksRes.json();
-      }
-
-      hideLoadingOverlay();
-
-      const wrap = el("div","rag-wrap");
-      const card = el("div","rag-card");
-      
-      const weekNum = summaryData.week || week;
-      card.appendChild(el("h2","rag-title","Week " + weekNum + " Summary"));
-
-
-
-      // Week tabs for navigation - show ALL completed weeks
-      if (allWeeksData && allWeeksData.ok && allWeeksData.weeks) {
-        const tabsContainer = el("div", "rag-week-tabs");
-        
-        // Find the highest completed week
-        let maxCompletedWeek = 0;
-        for (let w = 1; w <= 6; w++) {
-          const weekData = allWeeksData.weeks[w];
-          if (weekData && weekData.completed) {
-            maxCompletedWeek = w;
-          }
-        }
-
-        // Show buttons for all completed weeks (not just up to current)
-        for (let w = 1; w <= maxCompletedWeek; w++) {
-          const weekData = allWeeksData.weeks[w];
-          if (weekData && weekData.completed) {
-            const tab = el("button", "rag-week-tab" + (w === weekNum ? " active" : ""), "Week " + w);
-            tab.setAttribute('data-week', w);
-            tab.onclick = async function() {
-              // Change the global week variable and reload entire summary
-              week = w;
-              await renderSummary();
-            };
-            tabsContainer.appendChild(tab);
-          }
-        }
-        card.appendChild(tabsContainer);
-      }
-
-      // Chart container (will be populated by tabs)
-      const chartContainer = el("div", "rag-chart-container");
-      chartContainer.id = "chart-display";
-      card.appendChild(chartContainer);
-
-      // Add DISC display with visual plot
-if (summaryData.disc_type && summaryData.disc_scores) {
-  const discSection = el("div", "rag-disc-section");
-  discSection.style.cssText = "margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px;";
-  
-  const discTitle = el("div", "rag-disc-title");
-  discTitle.style.cssText = "font-size: 18px; font-weight: 600; margin-bottom: 16px; text-align: center;";
-  discTitle.textContent = "DISC Personality Style: " + summaryData.disc_type;
-  discSection.appendChild(discTitle);
-  
-  // Create container for plot and breakdown side by side
-  const discContent = el("div", "disc-content-wrapper");
-  discContent.style.cssText = "display: flex; gap: 20px; align-items: center; flex-wrap: wrap; justify-content: center;";
-  
-  // Add polar plot
-  const plotContainer = el("div", "disc-plot-wrapper");
-  plotContainer.style.cssText = "flex: 0 0 auto;";
-  const polarPlot = createDISCPolarPlot(summaryData.disc_scores);
-  if (polarPlot) {
-    plotContainer.appendChild(polarPlot);
-  }
-  discContent.appendChild(plotContainer);
-  
-  // Add score breakdown - VERTICAL with colored blocks
-const breakdown = el("div", "disc-breakdown");
-breakdown.style.cssText = "display: flex; flex-direction: column; gap: 8px; min-width: 120px;";
-
-// DISC colors matching the wheel
-const discColors = {
-  'D': '#2d5f8d',  // Blue
-  'I': '#f9b234',  // Yellow
-  'S': '#c67a3c',  // Orange
-  'C': '#3b5998'   // Dark blue
-};
-
-// Order: D, I, S, C (top to bottom)
-['D', 'I', 'S', 'C'].forEach(letter => {
-  const scores = summaryData.disc_scores[letter];
-  
-  const row = el("div", "disc-score-row");
-  row.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  `;
-  
-  // Colored square
-  const colorBox = el("div", "disc-color-box");
-  colorBox.style.cssText = `
-    width: 20px;
-    height: 20px;
-    background: ${discColors[letter]};
-    border-radius: 3px;
-    flex-shrink: 0;
-  `;
-  
-  // Label and percentage
-  const labelPct = el("div", "disc-label-pct");
-  labelPct.style.cssText = "font-weight: 600; font-size: 14px; color: #333;";
-  labelPct.textContent = `${letter}: ${Math.round(scores.percent)}%`;
-  
-  row.appendChild(colorBox);
-  row.appendChild(labelPct);
-  breakdown.appendChild(row);
-  });
-  
-  discContent.appendChild(breakdown);
-  discSection.appendChild(discContent);
-  
-  card.appendChild(discSection);
-}
-
-if (summaryData.ai) {
-  const aiSummaryDiv = el("div","rag-ai"); // start empty — speakWithReveal fills it
-  if (mfsdTTS.supported) {
-    const ttsBar = document.createElement('div');
-    ttsBar.className = 'mfsd-tts-summary-bar';
-    ttsBar.innerHTML = '<span style="font-size:13px;color:#666;font-style:italic;">AI Summary</span>';
-    ttsBar.appendChild(mfsdTTS.makeControls(summaryData.ai));
-    card.appendChild(ttsBar);
-  }
-  card.appendChild(aiSummaryDiv);
-  if (mfsdTTS.supported) {
-    setTimeout(() => mfsdTTS.speakWithReveal(summaryData.ai, aiSummaryDiv), 400);
-  } else {
-    aiSummaryDiv.textContent = summaryData.ai;
-  }
-}
-
-      const again = el("button","rag-btn","Back to intro");
-      again.onclick = () => {
-        window.location.reload();
-      };
-      card.appendChild(again);
-
-      wrap.appendChild(card);
-      root.replaceChildren(wrap);
-
-      // IMPORTANT: Show the current week's chart AFTER DOM is rendered
-      setTimeout(function() {
-        if (allWeeksData && allWeeksData.ok) {
-          showWeekChart(weekNum, allWeeksData.weeks);
-        } else {
-          // Fallback to single week display
-          const container = document.getElementById('chart-display');
-          if (container) {
-            const stats = el("div","rag-stats");
-            stats.appendChild(el("div","stat","Reds: " + summaryData.rag.reds));
-            stats.appendChild(el("div","stat","Ambers: " + summaryData.rag.ambers));
-            stats.appendChild(el("div","stat","Greens: " + summaryData.rag.greens));
-            stats.appendChild(el("div","stat","Score: " + summaryData.rag.total_score));
-            container.appendChild(stats);
-
-            const canvas = document.createElement('canvas');
-            canvas.width = 400;
-            canvas.height = 400;
-            container.appendChild(canvas);
-            
-            setTimeout(function() {
-              drawPieChart(canvas, parseInt(summaryData.rag.reds), parseInt(summaryData.rag.ambers), parseInt(summaryData.rag.greens));
-            }, 50);
-          }
-        }
-      }, 10);
-
-      console.log('=== renderSummary END ===');
-    } catch (err) {
-      hideLoadingOverlay();
-      console.error('Summary error:', err);
-      alert('Failed to load summary: ' + err.message);
-    }
-  }
-
-  function showWeekChart(weekNum, weeksData) {
-    const container = document.getElementById('chart-display');
-    if (!container) return;
-
-    const weekData = weeksData[weekNum];
-    if (!weekData || !weekData.completed) return;
-
-    container.innerHTML = '';
-
-    const weekTitle = el("h3", "rag-week-chart-title", "Week " + weekNum + " Results");
-    container.appendChild(weekTitle);
-
-    const stats = el("div","rag-stats");
-    stats.appendChild(el("div","stat","Reds: " + weekData.rag.reds));
-    stats.appendChild(el("div","stat","Ambers: " + weekData.rag.ambers));
-    stats.appendChild(el("div","stat","Greens: " + weekData.rag.greens));
-    stats.appendChild(el("div","stat","Score: " + weekData.rag.total_score));
-    container.appendChild(stats);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    container.appendChild(canvas);
-
-    setTimeout(function() {
-      drawPieChart(canvas, parseInt(weekData.rag.reds), parseInt(weekData.rag.ambers), parseInt(weekData.rag.greens));
-    }, 50);
-
-    if (weekData.mbti) {
-      const mbtiDiv = el("div", "rag-mbti-week", "MBTI: " + weekData.mbti);
-      container.appendChild(mbtiDiv);
-    }
-  }
-
-  function drawPieChart(canvas, reds, ambers, greens) {
-    console.log('Drawing pie chart:', reds, ambers, greens);
-    const ctx = canvas.getContext('2d');
-    const total = reds + ambers + greens;
-    
-    if (total === 0) {
-      console.log('Total is 0, not drawing chart');
-      return;
-    }
-
-    const centerX = canvas.width / 2;
-    const centerY = (canvas.height - 60) / 2;
-    const radius = Math.min(centerX, centerY) - 20;
-
-    const redPercent = (reds / total) * 100;
-    const amberPercent = (ambers / total) * 100;
-    const greenPercent = (greens / total) * 100;
-
-    const redAngle = (reds / total) * 2 * Math.PI;
-    const amberAngle = (ambers / total) * 2 * Math.PI;
-    const greenAngle = (greens / total) * 2 * Math.PI;
-
-    let currentAngle = -Math.PI / 2;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Red slice
-    if (reds > 0) {
-      ctx.fillStyle = '#d9534f';
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + redAngle);
-      ctx.closePath();
-      ctx.fill();
-      currentAngle += redAngle;
-    }
-
-    // Amber slice
-    if (ambers > 0) {
-      ctx.fillStyle = '#f0ad4e';
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + amberAngle);
-      ctx.closePath();
-      ctx.fill();
-      currentAngle += amberAngle;
-    }
-
-    // Green slice
-    if (greens > 0) {
-      ctx.fillStyle = '#5cb85c';
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + greenAngle);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // Legend at bottom
-    const legendY = canvas.height - 50;
-    const legendStartX = 30;
-    ctx.font = 'bold 14px Arial';
-    
-    // Red legend
-    ctx.fillStyle = '#d9534f';
-    ctx.fillRect(legendStartX, legendY, 20, 20);
-    ctx.fillStyle = '#000';
-    ctx.fillText('Red: ' + Math.round(redPercent) + '%', legendStartX + 25, legendY + 15);
-
-    // Amber legend
-    ctx.fillStyle = '#f0ad4e';
-    ctx.fillRect(legendStartX + 120, legendY, 20, 20);
-    ctx.fillStyle = '#000';
-    ctx.fillText('Amber: ' + Math.round(amberPercent) + '%', legendStartX + 145, legendY + 15);
-
-    // Green legend
-    ctx.fillStyle = '#5cb85c';
-    ctx.fillRect(legendStartX + 260, legendY, 20, 20);
-    ctx.fillStyle = '#000';
-    ctx.fillText('Green: ' + Math.round(greenPercent) + '%', legendStartX + 285, legendY + 15);
-    
-    console.log('Pie chart drawn successfully');
-  }
-
-  renderIntro();
-})();// ============================================================================
-// DISC POLAR PLOT VISUALIZATION
-// Add this to your mfsd-weekly-rag.js file
-// ============================================================================
-
-// DISC Descriptions (age-appropriate for 12-14 year olds)
-const DISC_DESCRIPTIONS = {
-  "D": {
-    "title": "Dominance (D) - The Leader",
-    "short": "You like to take charge and get things done! You're confident, direct, and love a good challenge.",
-    "strengths": "You're brave, determined, and great at making quick decisions.",
-    "growth": "Sometimes remember to slow down and listen to others' ideas.",
-    "tip": "Your leadership skills are awesome! Try letting others share their thoughts too."
-  },
-  "I": {
-    "title": "Influence (I) - The Enthusiast",
-    "short": "You're fun, friendly, and love being around people! You make friends easily.",
-    "strengths": "You're optimistic, creative, and amazing at bringing people together.",
-    "growth": "Try to stay focused on finishing what you start.",
-    "tip": "Your positive energy brightens everyone's day! Balance fun with getting stuff done."
-  },
-  "S": {
-    "title": "Steadiness (S) - The Supporter",
-    "short": "You're calm, loyal, and a great friend. People know they can count on you.",
-    "strengths": "You're patient, reliable, and an excellent listener.",
-    "growth": "It's okay to share your own opinions and try new things!",
-    "tip": "Your steady support means so much to others. Don't be afraid to speak up too!"
-  },
-  "C": {
-    "title": "Conscientiousness (C) - The Thinker",
-    "short": "You're thoughtful, detail-oriented, and love getting things right.",
-    "strengths": "You're careful, organized, and produce high-quality work.",
-    "growth": "Remember that sometimes 'good enough' is okay - not everything needs to be perfect.",
-    "tip": "Your attention to detail is a superpower! It's okay to make mistakes sometimes."
-  },
-  "DI": {
-    "title": "Dominance + Influence - The Inspiring Leader",
-    "short": "You're confident and outgoing! You love leading groups and getting people excited.",
-    "strengths": "You're energetic, persuasive, and great at motivating others.",
-    "growth": "Try to pause and listen to quieter voices in the group.",
-    "tip": "You're a natural leader who people want to follow! Balance your energy with patience."
-  },
-  "DC": {
-    "title": "Dominance + Conscientiousness - The Strategic Leader",
-    "short": "You're determined and smart! You set high goals and make detailed plans.",
-    "strengths": "You're focused, analytical, and excellent at solving complex problems.",
-    "growth": "Try to be flexible when plans change.",
-    "tip": "Your combination of drive and thinking skills is powerful!"
-  },
-  "IS": {
-    "title": "Influence + Steadiness - The Friendly Helper",
-    "short": "You're warm, kind, and love working with others. You make everyone feel welcome.",
-    "strengths": "You're empathetic, supportive, and create harmony in groups.",
-    "growth": "It's okay to say 'no' sometimes and share when you disagree.",
-    "tip": "Your caring nature is a gift! Don't forget to take care of yourself too."
-  },
-  "IC": {
-    "title": "Influence + Conscientiousness - The Creative Planner",
-    "short": "You're friendly and organized! You enjoy working with people while doing things well.",
-    "strengths": "You're sociable yet detail-oriented.",
-    "growth": "Try not to worry too much about what others think.",
-    "tip": "You balance fun and focus really well! Believe in yourself."
-  },
-  "SC": {
-    "title": "Steadiness + Conscientiousness - The Reliable Achiever",
-    "short": "You're calm, careful, and dependable. You take time to do things properly.",
-    "strengths": "You're patient, thorough, and consistently produce great work.",
-    "growth": "Try to be more comfortable with change and taking risks.",
-    "tip": "Your steady, quality work is amazing! Don't be afraid to try new things."
-  },
-  "DS": {
-    "title": "Dominance + Steadiness - The Determined Supporter",
-    "short": "You're strong-willed yet patient. You stand up for what's right while staying calm.",
-    "strengths": "You're resilient, dependable, and balance taking charge with being supportive.",
-    "growth": "Try to be more flexible and open to different approaches.",
-    "tip": "Your mix of strength and stability is unique!"
-  },
-  "CD": {
-    "title": "Conscientiousness + Dominance - The Strategic Achiever",
-    "short": "You're thoughtful and driven! You plan carefully and work hard to make things happen.",
-    "strengths": "You're logical, determined, and great at turning ideas into reality.",
-    "growth": "Remember to collaborate and hear others out.",
-    "tip": "Your planning and drive combo is strong! Include others for even better results."
-  },
-  "ID": {
-    "title": "Influence + Dominance - The Dynamic Motivator",
-    "short": "You're energetic and confident! You love getting people excited and leading them.",
-    "strengths": "You're charismatic, action-oriented, and amazing at rallying people together.",
-    "growth": "Take time to think things through before jumping in.",
-    "tip": "Your energy and leadership inspire others! Balance enthusiasm with planning."
-  },
-  "SI": {
-    "title": "Steadiness + Influence - The Caring Connector",
-    "short": "You're friendly and supportive! You build strong friendships and help everyone get along.",
-    "strengths": "You're warm, sociable, and create positive environments.",
-    "growth": "Practice being more assertive and making quick decisions.",
-    "tip": "Your ability to connect people is special! Trust yourself to take the lead sometimes."
-  },
-  "CS": {
-    "title": "Conscientiousness + Steadiness - The Thoughtful Supporter",
-    "short": "You're careful and patient. You think things through and work steadily toward goals.",
-    "strengths": "You're methodical, reliable, and produce consistent quality work.",
-    "growth": "Try to be more comfortable with uncertainty and faster decisions.",
-    "tip": "Your careful approach creates great results! Challenge yourself to try quick decisions."
-  },
-  "CI": {
-    "title": "Conscientiousness + Influence - The Analytical Communicator",
-    "short": "You're detail-focused and friendly! You explain complex things clearly.",
-    "strengths": "You're precise yet personable. You make complicated ideas easy to understand!",
-    "growth": "Don't worry too much about being perfect in social situations.",
-    "tip": "Your mix of smarts and social skills is valuable! Relax and trust yourself."
-  }
-};
-
-/**
- * Create DISC polar plot using Canvas
- * @param {Object} scores - Object with D, I, S, C scores (normalized 0-100)
- * @param {string} primaryStyle - Primary DISC style (e.g., "D", "DI")
- * @returns {HTMLCanvasElement} - Canvas element with the plot
- */
-function createDISCPolarPlot(scores) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 500;
-  canvas.height = 500;
-  canvas.id = 'disc-polar-plot';
-  
-  const ctx = canvas.getContext('2d');
-  const centerX = 250;
-  const centerY = 250;
-  const maxRadius = 180;
-  
-  // Background
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, 500, 500);
-  
-  // DISC segment colors (matching reference image)
-  const colors = {
-    'D': '#2d5f8d',  // Blue (Dominant)
-    'I': '#f9b234',  // Yellow (Influential)
-    'S': '#c67a3c',  // Orange (Steady)
-    'C': '#3b5998'   // Dark blue (Compliant)
-  };
-  
-  // Segment labels with CORRECTED positions
-  // Standard DISC: D=top-right, I=top-left, S=bottom-left, C=bottom-right
-  const segments = [
-    { 
-      key: 'D', 
-      startAngle: 0,                    // 0° (right)
-      endAngle: Math.PI / 2,            // 90° (top)
-      label: 'Dominant',
-      traits: ['Direct', 'Decisive', 'Doer'],
-      labelPos: { x: centerX + 140, y: centerY - 140 }
-    },
-    { 
-      key: 'I', 
-      startAngle: Math.PI / 2,          // 90° (top)
-      endAngle: Math.PI,                // 180° (left)
-      label: 'Influential',
-      traits: ['Inspirational', 'Interactive', 'Interesting'],
-      labelPos: { x: centerX - 140, y: centerY - 140 }
-    },
-    { 
-      key: 'S', 
-      startAngle: Math.PI,              // 180° (left)
-      endAngle: 3 * Math.PI / 2,        // 270° (bottom)
-      label: 'Steady',
-      traits: ['Stable', 'Supportive', 'Sincere'],
-      labelPos: { x: centerX - 140, y: centerY + 140 }
-    },
-    { 
-      key: 'C', 
-      startAngle: 3 * Math.PI / 2,      // 270° (bottom)
-      endAngle: 2 * Math.PI,            // 360° (right)
-      label: 'Compliant',
-      traits: ['Cautious', 'Careful', 'Conscientious'],
-      labelPos: { x: centerX + 140, y: centerY + 140 }
-    }
-  ];
-  
-  // Draw concentric circles (grid) - 4 levels for 25%, 50%, 75%, 100%
-  ctx.strokeStyle = '#e0e0e0';
-  ctx.lineWidth = 1;
-  for (let i = 1; i <= 4; i++) {
-    const r = (maxRadius / 4) * i;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, r, 0, 2 * Math.PI);
-    ctx.stroke();
-  }
-  
-  // Draw cross axes
-  ctx.strokeStyle = '#c0c0c0';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([5, 5]);
-  
-  // Vertical axis
-  ctx.beginPath();
-  ctx.moveTo(centerX, centerY - maxRadius);
-  ctx.lineTo(centerX, centerY + maxRadius);
-  ctx.stroke();
-  
-  // Horizontal axis
-  ctx.beginPath();
-  ctx.moveTo(centerX - maxRadius, centerY);
-  ctx.lineTo(centerX + maxRadius, centerY);
-  ctx.stroke();
-  
-  ctx.setLineDash([]);
-  
-  // Draw filled segments based on percentages
-  segments.forEach(seg => {
-    const percent = scores[seg.key].percent || 0;
-    const fillRadius = (percent / 100) * maxRadius;
-    
-    // Draw filled segment
-    ctx.fillStyle = colors[seg.key];
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.arc(centerX, centerY, fillRadius, seg.startAngle, seg.endAngle);
-    ctx.closePath();
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-    
-    // Draw segment outline
-    ctx.strokeStyle = colors[seg.key];
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.arc(centerX, centerY, maxRadius, seg.startAngle, seg.endAngle);
-    ctx.closePath();
-    ctx.stroke();
-  });
-  
-  // Add compass labels (Active, People Focus, etc.)
-  ctx.font = 'bold 14px Arial';
-  ctx.fillStyle = '#666';
-  ctx.textAlign = 'center';
-  
-  ctx.fillText('Active', centerX, centerY - maxRadius - 15);
-  ctx.fillText('Reflective', centerX, centerY + maxRadius + 25);
-  
-  ctx.save();
-  ctx.translate(centerX - maxRadius - 25, centerY);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('People Focus', 0, 0);
-  ctx.restore();
-  
-  ctx.save();
-  ctx.translate(centerX + maxRadius + 25, centerY);
-  ctx.rotate(Math.PI / 2);
-  ctx.fillText('Task Focus', 0, 0);
-  ctx.restore();
-  
-  // Draw segment labels and traits
-  ctx.textAlign = 'center';
-  segments.forEach(seg => {
-    const percent = scores[seg.key].percent || 0;
-    
-    // Main letter in center of segment
-    const midAngle = (seg.startAngle + seg.endAngle) / 2;
-    const letterX = centerX + (maxRadius * 0.4) * Math.cos(midAngle);
-    const letterY = centerY + (maxRadius * 0.4) * Math.sin(midAngle);
-    
-    ctx.font = 'bold 48px Arial';
-    ctx.fillStyle = '#333';
-    ctx.fillText(seg.key, letterX, letterY + 15); // +15 to vertically center
-    
-    // Full label outside circle
-    ctx.font = 'bold 16px Arial';
-    ctx.fillStyle = '#333';
-    const labelAngle = (seg.startAngle + seg.endAngle) / 2;
-    const labelX = centerX + (maxRadius + 50) * Math.cos(labelAngle);
-    const labelY = centerY + (maxRadius + 50) * Math.sin(labelAngle);
-    ctx.fillText(seg.label, labelX, labelY);
-    
-    // Traits (smaller text)
-    ctx.font = '11px Arial';
-    ctx.fillStyle = '#666';
-    seg.traits.forEach((trait, i) => {
-      ctx.fillText(trait, labelX, labelY + 18 + (i * 14));
-    });
-    
-    // Percentage (inside segment)
-    ctx.font = 'bold 16px Arial';
-    ctx.fillStyle = colors[seg.key];
-    const pctX = centerX + (maxRadius * 0.65) * Math.cos(midAngle);
-    const pctY = centerY + (maxRadius * 0.65) * Math.sin(midAngle);
-    ctx.fillText(Math.round(percent) + '%', pctX, pctY + 5);
-  });
-  
-  return canvas;
-}
 
 // ============================================================================
-// DISC ANSWER HANDLING
-// Add this function to handle DISC question answers
+// END OF ADDITIONS — no other changes needed in the JS file
 // ============================================================================
-
-//async function handleDISCAnswer(question, answerValue) {
-//  showLoading('Saving your answer...');
-//  
-//  try {
-//    const mapping = question.disc_mapping;
-//    const contribution = answerValue - 3; // Convert 1-5 scale to -2 to +2
-//    
-//    const payload = {
-//      week: week,
-//      question_id: question.id,
-//      q_type: 'DISC',
-//      answer: answerValue,
-//      d_contribution: mapping.D * contribution,
-//      i_contribution: mapping.I * contribution,
-//      s_contribution: mapping.S * contribution,
-//      c_contribution: mapping.C * contribution
-//    };
-//    
-//    const res = await fetch(cfg.restUrlAnswer, {
-//      method: 'POST',
-//      headers: {
-//        'Content-Type': 'application/json',
-//        'X-WP-Nonce': cfg.nonce || ''
-//      },
-//      credentials: 'same-origin',
-//      body: JSON.stringify(payload)
-//    });
-//    
-//    if (!res.ok) throw new Error('Failed to save answer');
-//    
-//    const data = await res.json();
-//    if (!data.ok) throw new Error(data.error || 'Failed');
-//    
-//    hideLoading();
-//    
-//    // Move to next question or summary
-//    idx++;
-//    if (idx < questions.length) {
-//      await renderQuestion();
-//    } else {
-//      await renderSummary();
-//    }
-//    
-//  } catch (err) {
-//    hideLoading();
-//    console.error('Error saving DISC answer:', err);
-//    alert('Error saving answer: ' + err.message);
-//  }
-//
-//
-// ============================================================================
-// UPDATE YOUR renderQuestion() FUNCTION
-// Add DISC question rendering
-// ============================================================================
-
-// Inside renderQuestion(), add this case for DISC questions:
-//if (q.q_type === 'DISC') {
-  // DISC uses 1-5 Likert scale
-//  const scaleContainer = el("div", "disc-scale-container");
-//  scaleContainer.style.cssText = "margin: 20px 0;";
-  
-//  const scaleLabel = el("div", "disc-scale-label");
-//  scaleLabel.style.cssText = "text-align: center; margin-bottom: 12px; font-weight: 600; color: #555;";
-//  scaleLabel.textContent = "How much do you agree with this statement?";
-//  scaleContainer.appendChild(scaleLabel);
-  
-//  const lights = el("div", "rag-lights");
-//  lights.style.cssText = "display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;";
-  
-//  const options = [
-//    { label: "Completely\nDisagree", value: 1, color: "#d9534f", emoji: "👎" },
-//    { label: "Somewhat\nDisagree", value: 2, color: "#f0ad4e", emoji: "🤔" },
-//    { label: "Neutral", value: 3, color: "#9e9e9e", emoji: "😐" },
-//    { label: "Somewhat\nAgree", value: 4, color: "#5cb85c", emoji: "👍" },
-//    { label: "Completely\nAgree", value: 5, color: "#4caf50", emoji: "💯" }
-//  ];
-  
-//  options.forEach(opt => {
-//    const btn = el("button", "rag-light disc-scale-btn");
-//    btn.style.cssText = `
-//      background: ${opt.color};
-//      color: white;
-//      border: none;
-//      border-radius: 10px;
-//      padding: 16px 12px;
-//      cursor: pointer;
-//      font-weight: 600;
-//      font-size: 13px;
-//      min-width: 90px;
-//      transition: all 0.2s;
-//      white-space: pre-line;
- //     text-align: center;
-//      display: flex;
-//      flex-direction: column;
-//      align-items: center;
-//      gap: 6px;
-//    `;
-    
-//    const emoji = el("span", "");
-//    emoji.style.cssText = "font-size: 24px;";
-//    emoji.textContent = opt.emoji;
-//    btn.appendChild(emoji);
-//    
-//    const label = el("span", "");
-//    label.style.cssText = "font-size: 12px; line-height: 1.3;";
-//    label.textContent = opt.label.replace('\n', ' ');
-//    btn.appendChild(label);
-    
-//    btn.onmouseover = () => {
-//      btn.style.transform = "translateY(-3px)";
-//      btn.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
-//    };
-//    btn.onmouseout = () => {
-//      btn.style.transform = "translateY(0)";
-//      btn.style.boxShadow = "none";
-//    };
-//    btn.onclick = () => handleDISCAnswer(q, opt.value);
-    
-//    lights.appendChild(btn);
-//  });
-  
-//  scaleContainer.appendChild(lights);
-//  card.appendChild(scaleContainer);
-//}
