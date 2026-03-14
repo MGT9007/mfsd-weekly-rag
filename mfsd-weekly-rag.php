@@ -2,15 +2,15 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 4.0.16
+ * Version: 4.0.17
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '4.0.16';
-   const NONCE_ACTION = 'mfsd_rag_nonce';
+    const VERSION = '4.0.17';
+    const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS = 'mfsd_rag_questions';
     const TBL_ANSWERS_RAG = 'mfsd_rag_answers';
@@ -125,12 +125,8 @@ final class MFSD_Weekly_RAG {
     public function assets() {
         $h = 'mfsd-weekly-rag';
         $base = plugin_dir_url(__FILE__);
-
         wp_register_script($h, $base . 'assets/mfsd-weekly-rag.js', array('wp-element'), self::VERSION, true);
         wp_register_style($h, $base . 'assets/mfsd-weekly-rag.css', array(), self::VERSION);
-
-        // Don't enqueue here - let shortcode handle it
-        // This way we can set the week number before the script runs
     }
 
     public function shortcode($atts) {
@@ -138,7 +134,6 @@ final class MFSD_Weekly_RAG {
         if (is_page()) {
             $title = get_the_title();
             error_log('MFSD RAG: Page title is: ' . $title);
-            
             if (preg_match('/Week\s*([1-6])\s*RAG/i', $title, $m)) {
                 $week = (int) $m[1];
                 error_log('MFSD RAG: Extracted week number: ' . $week);
@@ -147,7 +142,6 @@ final class MFSD_Weekly_RAG {
             }
         }
 
-        // CRITICAL: Set the config BEFORE enqueueing the script
         wp_localize_script('mfsd-weekly-rag', 'MFSD_RAG_CFG', array(
             'restUrlQuestions'    => esc_url_raw(rest_url('mfsd/v1/questions')),
             'restUrlAnswer'       => esc_url_raw(rest_url('mfsd/v1/answer')),
@@ -181,49 +175,41 @@ final class MFSD_Weekly_RAG {
             'callback'            => array($this, 'api_questions'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/answer', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_answer'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/summary', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_summary'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/status', array(
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => array($this, 'api_status'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/previous-answer', array(
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => array($this, 'api_previous_answer'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/question-guidance', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_question_guidance'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/all-weeks-summary', array(
             'methods'             => WP_REST_Server::READABLE,
             'callback'            => array($this, 'api_all_weeks_summary'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/question-chat', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_question_chat'),
             'permission_callback' => array($this, 'check_permission'),
         ));
-
         register_rest_route('mfsd/v1', '/admin-reset-week', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_admin_reset_week'),
@@ -235,14 +221,12 @@ final class MFSD_Weekly_RAG {
         if (!is_user_logged_in()) {
             return new WP_Error('rest_forbidden', __('You must be logged in.'), array('status' => 401));
         }
-        
         if (in_array($request->get_method(), array('POST', 'PUT', 'DELETE'))) {
             $nonce = $request->get_header('X-WP-Nonce');
             if (!$nonce || !wp_verify_nonce($nonce, 'wp_rest')) {
                 return new WP_Error('rest_forbidden', __('Invalid security token.'), array('status' => 403));
             }
         }
-        
         return true;
     }
 
@@ -255,25 +239,17 @@ final class MFSD_Weekly_RAG {
         $rows = $wpdb->get_results("SELECT * FROM $q WHERE $wkcol=1 ORDER BY q_type='MBTI', q_order ASC", ARRAY_A);
 
         $rag = array();
-        $mb = array();
+        $mb  = array();
         foreach ($rows as $r) {
-            if ($r['q_type'] === 'RAG') {
-                $rag[] = $r;
-            } else {
-                $mb[] = $r;
-            }
+            if ($r['q_type'] === 'RAG') $rag[] = $r;
+            else $mb[] = $r;
         }
 
         $out = array();
-        $iR = 0;
-        $iM = 0;
+        $iR = 0; $iM = 0;
         while ($iR < count($rag) || $iM < count($mb)) {
-            for ($k = 0; $k < 2 && $iR < count($rag); $k++) {
-                $out[] = $rag[$iR++];
-            }
-            if ($iM < count($mb)) {
-                $out[] = $mb[$iM++];
-            }
+            for ($k = 0; $k < 2 && $iR < count($rag); $k++) $out[] = $rag[$iR++];
+            if ($iM < count($mb)) $out[] = $mb[$iM++];
         }
 
         return new WP_REST_Response(array('ok' => true, 'questions' => $out), 200);
@@ -283,30 +259,16 @@ final class MFSD_Weekly_RAG {
         global $wpdb;
         $week = max(1, min(6, (int)$req->get_param('week')));
         $user_id = $this->get_current_um_user_id();
-        
-        error_log("MFSD RAG Status Check: user_id=$user_id, week=$week");
-        
+
         if (!$user_id) {
-            error_log("MFSD RAG Status: No user ID found");
-            return new WP_REST_Response(array(
-                'ok' => true, 
-                'status' => 'not_started',
-                'can_start' => false,
-                'message' => 'Please log in'
-            ), 200);
+            return new WP_REST_Response(array('ok' => true, 'status' => 'not_started', 'can_start' => false, 'message' => 'Please log in'), 200);
         }
 
-        // Check if previous week is completed (for weeks 2-6)
         $can_start = true;
         $blocking_week = null;
-        
         if ($week > 1) {
-            // Check all previous weeks are completed
             for ($w = 1; $w < $week; $w++) {
-                $prev_total = $this->get_total_answer_count($user_id, $w);
-                $expected_total = $this->get_expected_total_count($w);
-                
-                if ($prev_total < $expected_total) {
+                if ($this->get_total_answer_count($user_id, $w) < $this->get_expected_total_count($w)) {
                     $can_start = false;
                     $blocking_week = $w;
                     break;
@@ -314,162 +276,69 @@ final class MFSD_Weekly_RAG {
             }
         }
 
-        // Get answer counts for this week
-        $rag_count = $this->get_rag_answer_count($user_id, $week);
-        $mbti_count = $this->get_mbti_answer_count($user_id, $week);
+        $rag_count   = $this->get_rag_answer_count($user_id, $week);
+        $mbti_count  = $this->get_mbti_answer_count($user_id, $week);
         $total_count = $rag_count + $mbti_count;
-        
-        // Get expected question counts
-        $expected_rag = $this->get_expected_rag_count($week);
-        $expected_mbti = $this->get_expected_mbti_count($week);
+        $expected_rag   = $this->get_expected_rag_count($week);
+        $expected_mbti  = $this->get_expected_mbti_count($week);
         $expected_total = $expected_rag + $expected_mbti;
-        
-        error_log("MFSD RAG Status: Week $week - RAG: $rag_count/$expected_rag, MBTI: $mbti_count/$expected_mbti, Total: $total_count/$expected_total");
 
         $status = 'not_started';
         $last_question_id = null;
-        
+
         if ($total_count >= $expected_total) {
             $status = 'completed';
         } elseif ($total_count > 0) {
             $status = 'in_progress';
-            
-            // Get the last answered question ID (check both tables)
-            $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            $a  = $wpdb->prefix . self::TBL_ANSWERS_RAG;
             $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
-            
-            $last_rag = $wpdb->get_row($wpdb->prepare(
-                "SELECT question_id, created_at FROM $a 
-                 WHERE user_id=%d AND week_num=%d 
-                 ORDER BY created_at DESC LIMIT 1",
-                $user_id, $week
-            ), ARRAY_A);
-            
-            $last_mbti = $wpdb->get_row($wpdb->prepare(
-                "SELECT question_id, created_at FROM $mb 
-                 WHERE user_id=%d AND week_num=%d 
-                 ORDER BY created_at DESC LIMIT 1",
-                $user_id, $week
-            ), ARRAY_A);
-            
-            // Compare timestamps to find which was answered last
+            $last_rag  = $wpdb->get_row($wpdb->prepare("SELECT question_id, created_at FROM $a WHERE user_id=%d AND week_num=%d ORDER BY created_at DESC LIMIT 1", $user_id, $week), ARRAY_A);
+            $last_mbti = $wpdb->get_row($wpdb->prepare("SELECT question_id, created_at FROM $mb WHERE user_id=%d AND week_num=%d ORDER BY created_at DESC LIMIT 1", $user_id, $week), ARRAY_A);
             if ($last_rag && $last_mbti) {
-                if (strtotime($last_rag['created_at']) > strtotime($last_mbti['created_at'])) {
-                    $last_question_id = $last_rag['question_id'];
-                } else {
-                    $last_question_id = $last_mbti['question_id'];
-                }
-            } elseif ($last_rag) {
-                $last_question_id = $last_rag['question_id'];
-            } elseif ($last_mbti) {
-                $last_question_id = $last_mbti['question_id'];
-            }
+                $last_question_id = strtotime($last_rag['created_at']) > strtotime($last_mbti['created_at']) ? $last_rag['question_id'] : $last_mbti['question_id'];
+            } elseif ($last_rag)  { $last_question_id = $last_rag['question_id']; }
+            elseif ($last_mbti)   { $last_question_id = $last_mbti['question_id']; }
         }
-        
-        // Get ALL answered question IDs for this week (both RAG and MBTI)
+
         $answered_ids = array();
         if ($total_count > 0) {
-            $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            $a  = $wpdb->prefix . self::TBL_ANSWERS_RAG;
             $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
-            
-            $rag_ids = $wpdb->get_col($wpdb->prepare(
-                "SELECT DISTINCT question_id FROM $a WHERE user_id=%d AND week_num=%d",
-                $user_id, $week
-            ));
-            
-            $mbti_ids = $wpdb->get_col($wpdb->prepare(
-                "SELECT DISTINCT question_id FROM $mb WHERE user_id=%d AND week_num=%d",
-                $user_id, $week
-            ));
-            
-            $answered_ids = array_merge($rag_ids ?: array(), $mbti_ids ?: array());
-            $answered_ids = array_map('intval', $answered_ids);
+            $rag_ids  = $wpdb->get_col($wpdb->prepare("SELECT DISTINCT question_id FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $week));
+            $mbti_ids = $wpdb->get_col($wpdb->prepare("SELECT DISTINCT question_id FROM $mb WHERE user_id=%d AND week_num=%d", $user_id, $week));
+            $answered_ids = array_map('intval', array_merge($rag_ids ?: array(), $mbti_ids ?: array()));
         }
-        
-        error_log("MFSD RAG Status: Answered question IDs for week $week: " . implode(', ', $answered_ids));
-        
-        // Get previous week summary for weeks 2-6
+
         $previous_week_summary = null;
         $intro_message = null;
-        
         if ($week > 1 && $status === 'not_started') {
             $prev_week = $week - 1;
-            $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-            
-            // Get previous week's RAG results
-            $prev_rag = $wpdb->get_row($wpdb->prepare("
-                SELECT
-                    SUM(answer='R') AS reds,
-                    SUM(answer='A') AS ambers,
-                    SUM(answer='G') AS greens,
-                    SUM(score) AS total_score
-                FROM $a WHERE user_id=%d AND week_num=%d
-            ", $user_id, $prev_week), ARRAY_A);
-            
-            // Get previous week's MBTI type
+            $a   = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            $prev_rag = $wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds, SUM(answer='A') AS ambers, SUM(answer='G') AS greens, SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $prev_week), ARRAY_A);
             $mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
-            $prev_mbti = $wpdb->get_var($wpdb->prepare(
-                "SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",
-                $user_id, $prev_week
-            ));
-            
+            $prev_mbti = $wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d", $user_id, $prev_week));
             if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) {
-                $previous_week_summary = array(
-                    'week' => $prev_week,
-                    'reds' => (int)$prev_rag['reds'],
-                    'ambers' => (int)$prev_rag['ambers'],
-                    'greens' => (int)$prev_rag['greens'],
-                    'total_score' => (int)$prev_rag['total_score'],
-                    'mbti_type' => $prev_mbti
-                );
-                
-                // Generate AI intro message
+                $previous_week_summary = array('week' => $prev_week, 'reds' => (int)$prev_rag['reds'], 'ambers' => (int)$prev_rag['ambers'], 'greens' => (int)$prev_rag['greens'], 'total_score' => (int)$prev_rag['total_score'], 'mbti_type' => $prev_mbti);
                 if (isset($GLOBALS['mwai'])) {
                     try {
                         $mwai = $GLOBALS['mwai'];
-                        $username = function_exists('um_get_display_name') 
-                            ? um_get_display_name($user_id) 
-                            : get_userdata($user_id)->display_name;
-                        
-                        $prompt = "You are a supportive coach speaking to $username, aged 12-14, about their High Performance Pathway progress.\n\n";
+                        $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+                        $prompt  = "You are a supportive coach speaking to $username, aged 12-14, about their High Performance Pathway progress.\n\n";
                         $prompt .= "Last week (Week $prev_week), they completed a self-assessment with these results:\n";
-                        $prompt .= "- Greens (strengths): {$prev_rag['greens']}\n";
-                        $prompt .= "- Ambers (mixed/uncertain): {$prev_rag['ambers']}\n";
-                        $prompt .= "- Reds (needs support): {$prev_rag['reds']}\n";
-                        
-                        if ($prev_mbti) {
-                            $prompt .= "- MBTI type: $prev_mbti\n";
-                        }
-                        
-                        $prompt .= "\nWrite a brief, warm welcome message for Week $week that:\n";
-                        $prompt .= "1. Acknowledges their Week $prev_week results (be specific about what stood out)\n";
-                        $prompt .= "2. Explains what the RAG colours mean in your own encouraging words\n";
-                        $prompt .= "3. Sets a positive, motivating tone for starting Week $week\n\n";
-                        
-                        $prompt .= "CRITICAL: Address them directly using 'you' and 'your'. Keep it to 3-4 sentences max.\n";
-                        $prompt .= "Be warm, encouraging, and age-appropriate for 12-14 year olds.";
-                        
+                        $prompt .= "- Greens (strengths): {$prev_rag['greens']}\n- Ambers (mixed/uncertain): {$prev_rag['ambers']}\n- Reds (needs support): {$prev_rag['reds']}\n";
+                        if ($prev_mbti) $prompt .= "- MBTI type: $prev_mbti\n";
+                        $prompt .= "\nWrite a brief, warm welcome message for Week $week (3-4 sentences max). Address them directly using 'you' and 'your'. Be warm, encouraging, and age-appropriate for 12-14 year olds.";
                         $intro_message = $mwai->simpleTextQuery($prompt);
-                    } catch (Exception $e) {
-                        error_log('MFSD RAG: Intro message error: ' . $e->getMessage());
-                    }
+                    } catch (Exception $e) { error_log('MFSD RAG: Intro message error: ' . $e->getMessage()); }
                 }
             }
         }
-        
+
         return new WP_REST_Response(array(
-            'ok' => true, 
-            'status' => $status,
-            'rag_count' => (int)$rag_count,
-            'mbti_count' => (int)$mbti_count,
-            'total_count' => (int)$total_count,
-            'expected_rag' => $expected_rag,
-            'expected_mbti' => $expected_mbti,
-            'expected_total' => $expected_total,
-            'week' => $week,
-            'user_id' => $user_id,
-            'can_start' => $can_start,
-            'blocking_week' => $blocking_week,
+            'ok' => true, 'status' => $status,
+            'rag_count' => (int)$rag_count, 'mbti_count' => (int)$mbti_count, 'total_count' => (int)$total_count,
+            'expected_rag' => $expected_rag, 'expected_mbti' => $expected_mbti, 'expected_total' => $expected_total,
+            'week' => $week, 'user_id' => $user_id, 'can_start' => $can_start, 'blocking_week' => $blocking_week,
             'last_question_id' => $last_question_id ? (int)$last_question_id : null,
             'answered_question_ids' => $answered_ids,
             'previous_week_summary' => $previous_week_summary,
@@ -480,73 +349,51 @@ final class MFSD_Weekly_RAG {
     private function get_rag_answer_count($user_id, $week) {
         global $wpdb;
         $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-        return (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $a WHERE user_id=%d AND week_num=%d",
-            $user_id, $week
-        ));
+        return (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $week));
     }
 
     private function get_mbti_answer_count($user_id, $week) {
         global $wpdb;
         $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
-        return (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $mb WHERE user_id=%d AND week_num=%d",
-            $user_id, $week
-        ));
+        return (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $mb WHERE user_id=%d AND week_num=%d", $user_id, $week));
     }
 
     private function get_disc_answer_count($user_id, $week) {
         global $wpdb;
         $disc = $wpdb->prefix . self::TBL_ANSWERS_DISC;
-        return (int)$wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM $disc WHERE user_id=%d AND week_num=%d",
-            $user_id, $week
-        ));
+        return (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $disc WHERE user_id=%d AND week_num=%d", $user_id, $week));
     }
 
     private function get_expected_disc_count($week) {
         global $wpdb;
         $q = $wpdb->prefix . self::TBL_QUESTIONS;
         $wkcol = 'w' . $week;
-        
-        return (int)$wpdb->get_var(
-            "SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='DISC'"
-        );
+        return (int)$wpdb->get_var("SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='DISC'");
     }
 
     private function get_total_answer_count($user_id, $week) {
-        return $this->get_rag_answer_count($user_id, $week) + 
-               $this->get_mbti_answer_count($user_id, $week) +
-               $this->get_disc_answer_count($user_id, $week);
+        return $this->get_rag_answer_count($user_id, $week) + $this->get_mbti_answer_count($user_id, $week) + $this->get_disc_answer_count($user_id, $week);
     }
 
     private function get_expected_rag_count($week) {
         global $wpdb;
         $q = $wpdb->prefix . self::TBL_QUESTIONS;
         $wkcol = 'w' . $week;
-        
-        return (int)$wpdb->get_var(
-            "SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='RAG'"
-        );
+        return (int)$wpdb->get_var("SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='RAG'");
     }
 
     private function get_expected_mbti_count($week) {
         global $wpdb;
         $q = $wpdb->prefix . self::TBL_QUESTIONS;
         $wkcol = 'w' . $week;
-        
-        return (int)$wpdb->get_var(
-            "SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='MBTI'"
-        );
+        return (int)$wpdb->get_var("SELECT COUNT(*) FROM $q WHERE $wkcol=1 AND q_type='MBTI'");
     }
 
     private function get_expected_total_count($week) {
-        return $this->get_expected_rag_count($week) + 
-               $this->get_expected_mbti_count($week);
+        return $this->get_expected_rag_count($week) + $this->get_expected_mbti_count($week);
     }
 
     private function get_expected_question_count($week) {
-        // Keep for backward compatibility, returns total
         return $this->get_expected_total_count($week);
     }
 
@@ -555,52 +402,22 @@ final class MFSD_Weekly_RAG {
         $week = max(1, min(6, (int)$req->get_param('week')));
         $question_id = (int)$req->get_param('question_id');
         $user_id = $this->get_current_um_user_id();
-        
-        error_log("MFSD RAG Previous: user=$user_id, question=$question_id, current_week=$week");
-        
+
         if (!$user_id || !$question_id || $week <= 1) {
             return new WP_REST_Response(array('ok' => true, 'previous' => array()), 200);
         }
 
-        // Get the question to check if it's RAG or MBTI
-        $q_table = $wpdb->prefix . self::TBL_QUESTIONS;
-        $question = $wpdb->get_row($wpdb->prepare(
-            "SELECT q_type, q_order FROM $q_table WHERE id=%d", $question_id
-        ), ARRAY_A);
-
-        if (!$question) {
-            return new WP_REST_Response(array('ok' => true, 'previous' => array()), 200);
-        }
+        $q_table  = $wpdb->prefix . self::TBL_QUESTIONS;
+        $question = $wpdb->get_row($wpdb->prepare("SELECT q_type, q_order FROM $q_table WHERE id=%d", $question_id), ARRAY_A);
+        if (!$question) return new WP_REST_Response(array('ok' => true, 'previous' => array()), 200);
 
         $previous = array();
-
         if ($question['q_type'] === 'RAG') {
-            // RAG questions - get from RAG answers table
             $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-            $previous = $wpdb->get_results($wpdb->prepare(
-                "SELECT week_num, answer 
-                 FROM $a 
-                 WHERE user_id=%d AND question_id=%d AND week_num < %d 
-                 GROUP BY week_num
-                 ORDER BY week_num ASC",
-                $user_id, $question_id, $week
-            ), ARRAY_A);
+            $previous = $wpdb->get_results($wpdb->prepare("SELECT week_num, answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num < %d GROUP BY week_num ORDER BY week_num ASC", $user_id, $question_id, $week), ARRAY_A);
         } else {
-            // MBTI questions - get from MBTI answers table
             $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
-            $previous = $wpdb->get_results($wpdb->prepare(
-                "SELECT week_num, answer 
-                 FROM $mb 
-                 WHERE user_id=%d AND question_id=%d AND week_num < %d 
-                 GROUP BY week_num
-                 ORDER BY week_num ASC",
-                $user_id, $question_id, $week
-            ), ARRAY_A);
-        }
-
-        error_log("MFSD RAG Previous: Found " . count($previous) . " previous answers");
-        foreach ($previous as $p) {
-            error_log("  Week {$p['week_num']}: {$p['answer']}");
+            $previous = $wpdb->get_results($wpdb->prepare("SELECT week_num, answer FROM $mb WHERE user_id=%d AND question_id=%d AND week_num < %d GROUP BY week_num ORDER BY week_num ASC", $user_id, $question_id, $week), ARRAY_A);
         }
 
         return new WP_REST_Response(array('ok' => true, 'previous' => $previous), 200);
@@ -608,152 +425,74 @@ final class MFSD_Weekly_RAG {
 
     public function api_question_guidance($req) {
         global $wpdb;
-        $week = max(1, min(6, (int)$req->get_param('week')));
+        $week        = max(1, min(6, (int)$req->get_param('week')));
         $question_id = (int)$req->get_param('question_id');
-        $user_id = $this->get_current_um_user_id();
-        
-        if (!$user_id || !$question_id) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid request'), 400);
-        }
+        $user_id     = $this->get_current_um_user_id();
 
-        // Get the question
-        $q_table = $wpdb->prefix . self::TBL_QUESTIONS;
-        $question = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $q_table WHERE id=%d", $question_id
-        ), ARRAY_A);
+        if (!$user_id || !$question_id) return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid request'), 400);
 
-        if (!$question) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
-        }
+        $q_table  = $wpdb->prefix . self::TBL_QUESTIONS;
+        $question = $wpdb->get_row($wpdb->prepare("SELECT * FROM $q_table WHERE id=%d", $question_id), ARRAY_A);
+        if (!$question) return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
 
-        // Get previous answers (only for RAG questions)
         $previous = array();
         if ($week > 1 && $question['q_type'] === 'RAG') {
             $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-            $previous = $wpdb->get_results($wpdb->prepare(
-                "SELECT week_num, answer FROM $a 
-                 WHERE user_id=%d AND question_id=%d AND week_num < %d 
-                 GROUP BY week_num
-                 ORDER BY week_num ASC",
-                $user_id, $question_id, $week
-            ), ARRAY_A);
+            $previous = $wpdb->get_results($wpdb->prepare("SELECT week_num, answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num < %d GROUP BY week_num ORDER BY week_num ASC", $user_id, $question_id, $week), ARRAY_A);
         }
 
-        // Generate AI guidance
         $guidance = '';
         if (isset($GLOBALS['mwai'])) {
             try {
-                $mwai = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') 
-                    ? um_get_display_name($user_id) 
-                    : get_userdata($user_id)->display_name;
-                
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+
                 if ($question['q_type'] === 'MBTI') {
-                    // MBTI question guidance
-                    $prompt = "You are a supportive coach speaking directly to $username, a student completing a personality assessment.\n\n";
+                    $prompt  = "You are a supportive coach speaking directly to $username, a student completing a personality assessment.\n\n";
                     $prompt .= "The question is: \"{$question['q_text']}\"\n\n";
-                    $prompt .= "Write a brief, practical explanation that:\n";
-                    $prompt .= "1. Explains what this question is exploring about their personality\n";
-                    $prompt .= "2. Helps them understand how to answer honestly:\n";
-                    $prompt .= "   - Red = This doesn't describe you\n";
-                    $prompt .= "   - Amber = Sometimes, or you're unsure\n";
-                    $prompt .= "   - Green = This describes you well\n\n";
-                    $prompt .= "Remind them there are no right or wrong answers - just honest self-reflection.\n\n";
-                    $prompt .= "IMPORTANT: Address $username directly using 'you' and 'your' throughout. Speak TO them, not ABOUT them.\n";
-                    $prompt .= "Keep the response concise (2-3 sentences), warm, and encouraging.\n";
-                    $prompt .= "Example opening: 'This question is asking you to reflect on...' NOT 'This question is asking $username to reflect...'";
+                    $prompt .= "Write a brief, practical explanation (2-3 sentences) that explains what this question explores about their personality and helps them answer honestly (Red = doesn't describe you, Amber = sometimes/unsure, Green = describes you well). Remind them there are no right or wrong answers.\n\n";
+                    $prompt .= "IMPORTANT: Address $username directly using 'you' and 'your' throughout.";
                 } else {
-                    // RAG question guidance
-                    $prompt = "You are a supportive coach speaking directly to $username, a student completing a self-assessment.\n\n";
+                    $prompt  = "You are a supportive coach speaking directly to $username, a student completing a self-assessment.\n\n";
                     $prompt .= "The question is: \"{$question['q_text']}\"\n\n";
-                    $prompt .= "Write a brief, practical explanation that:\n";
-                    $prompt .= "1. Explains what this question is asking them to reflect on\n";
-                    $prompt .= "2. Helps them understand how to answer:\n";
-                    $prompt .= "   - Red = You're struggling or need support\n";
-                    $prompt .= "   - Amber = You have mixed feelings or are uncertain\n";
-                    $prompt .= "   - Green = You feel confident, this is a strength\n";
-                    
+                    $prompt .= "Write a brief, practical explanation (3-4 sentences) that explains what this question asks them to reflect on and how to answer (Red = struggling/need support, Amber = mixed/uncertain, Green = confident/strength).\n";
                     if (!empty($previous)) {
-                        $prompt .= "\n\nContext: In previous weeks, $username answered:\n";
+                        $prompt .= "\nContext — previous week answers:\n";
                         foreach ($previous as $ans) {
-                            $label = ($ans['answer'] === 'R') ? 'Red (struggling)' : 
-                                    (($ans['answer'] === 'A') ? 'Amber (mixed)' : 'Green (confident)');
+                            $label = ($ans['answer'] === 'R') ? 'Red (struggling)' : (($ans['answer'] === 'A') ? 'Amber (mixed)' : 'Green (confident)');
                             $prompt .= "Week {$ans['week_num']}: $label\n";
                         }
-                        $prompt .= "\nAcknowledge their previous responses and what progress or patterns you notice, speaking directly to them about their journey.\n";
+                        $prompt .= "\nAcknowledge their progress or patterns, speaking directly to them.\n";
                     }
-                    
-                    $prompt .= "\n\nIMPORTANT: Address $username directly using 'you' and 'your' throughout. Speak TO them, not ABOUT them.\n";
-                    $prompt .= "Keep the response concise (3-4 sentences), warm, encouraging, and practical.\n";
-                    $prompt .= "Example opening: 'This question is asking you to reflect on...' NOT 'This question is asking $username to reflect...'\n";
-                    $prompt .= "When discussing their situation, say 'when you faced difficulties' NOT 'when he/she faced difficulties'.";
+                    $prompt .= "\nIMPORTANT: Address $username directly using 'you' and 'your' throughout.";
                 }
-                
                 $guidance = $mwai->simpleTextQuery($prompt);
             } catch (Exception $e) {
                 error_log('MFSD RAG: AI guidance error: ' . $e->getMessage());
-                $guidance = '';
             }
         }
 
-        return new WP_REST_Response(array(
-            'ok' => true,
-            'guidance' => $guidance,
-            'question' => $question['q_text'],
-            'type' => $question['q_type']
-        ), 200);
+        return new WP_REST_Response(array('ok' => true, 'guidance' => $guidance, 'question' => $question['q_text'], 'type' => $question['q_type']), 200);
     }
 
     public function api_all_weeks_summary($req) {
         global $wpdb;
         $user_id = $this->get_current_um_user_id();
-        
-        if (!$user_id) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
-        }
+        if (!$user_id) return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
 
-   $all_weeks = array();
-$a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-$mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
-$ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $all_weeks = array();
+        $a   = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+        $mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
+        $ws  = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
 
-for ($w = 1; $w <= 6; $w++) {
-    // Check if week summary exists (only created when all questions answered)
-    $summary_exists = $wpdb->get_var($wpdb->prepare(
-        "SELECT COUNT(*) FROM $ws WHERE user_id=%d AND week_num=%d",
-        $user_id, $w
-    ));
-    
-    $is_completed = ($summary_exists > 0);
-    
-    if ($is_completed) {
-        // Get RAG stats for this week
-        $rag_stats = $wpdb->get_row($wpdb->prepare("
-            SELECT
-                SUM(answer='R') AS reds,
-                SUM(answer='A') AS ambers,
-                SUM(answer='G') AS greens,
-                SUM(score) AS total_score
-            FROM $a WHERE user_id=%d AND week_num=%d
-        ", $user_id, $w), ARRAY_A);
-
-        // Get MBTI type for this week
-        $mbti = $wpdb->get_var($wpdb->prepare(
-            "SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",
-            $user_id, $w
-        ));
-
-        $all_weeks[$w] = array(
-            'week' => $w,
-            'rag' => $rag_stats,
-            'mbti' => $mbti ? $mbti : null,
-            'completed' => true
-        );
-    } else {
-        $all_weeks[$w] = array(
-            'week' => $w,
-            'completed' => false
-                );
+        for ($w = 1; $w <= 6; $w++) {
+            $summary_exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $ws WHERE user_id=%d AND week_num=%d", $user_id, $w));
+            if ($summary_exists > 0) {
+                $rag_stats = $wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds, SUM(answer='A') AS ambers, SUM(answer='G') AS greens, SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $w), ARRAY_A);
+                $mbti      = $wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d", $user_id, $w));
+                $all_weeks[$w] = array('week' => $w, 'rag' => $rag_stats, 'mbti' => $mbti ?: null, 'completed' => true);
+            } else {
+                $all_weeks[$w] = array('week' => $w, 'completed' => false);
             }
         }
 
@@ -761,545 +500,180 @@ for ($w = 1; $w <= 6; $w++) {
     }
 
     public function api_answer($request) {
-        $user_id = get_current_user_id();
-        $week_num = (int) $request->get_param('week');
+        $user_id     = get_current_user_id();
+        $week_num    = (int) $request->get_param('week');
         $question_id = (int) $request->get_param('question_id');
-        $answer = strtoupper(sanitize_text_field($request->get_param('rag')));
 
-        if (!$week_num || !$question_id) {
-        return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid data'), 400);
-        }
+        if (!$week_num || !$question_id) return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid data'), 400);
 
         global $wpdb;
         $table_questions = $wpdb->prefix . self::TBL_QUESTIONS;
-        
         $question = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_questions WHERE id = %d", $question_id), ARRAY_A);
+        if (!$question) return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
 
-        if (!$question) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
-        }
+        $inserted = false;
 
-         if ($question['q_type'] === 'RAG') {
-           // RAG-specific validation
+        if ($question['q_type'] === 'RAG') {
             $answer = strtoupper(sanitize_text_field($request->get_param('rag')));
-             if (!in_array($answer, array('R', 'A', 'G'))) {
-                return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid RAG answer'), 400);
-            }
-                
+            if (!in_array($answer, array('R','A','G'))) return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid RAG answer'), 400);
             $score = 0;
-            if ($answer === 'R') $score = (int) $question['red_score'];
-            elseif ($answer === 'A') $score = (int) $question['amber_score'];
-            elseif ($answer === 'G') $score = (int) $question['green_score'];
-
+            if ($answer === 'R') $score = (int)$question['red_score'];
+            elseif ($answer === 'A') $score = (int)$question['amber_score'];
+            elseif ($answer === 'G') $score = (int)$question['green_score'];
             $table_rag = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-            $inserted = $wpdb->insert($table_rag, array(
-                'user_id'     => $user_id,
-                'week_num'    => $week_num,
-                'question_id' => $question_id,
-                'answer'      => $answer,
-                'score'       => $score,
-                'created_at'  => current_time('mysql'),
-            ), array('%d', '%d', '%d', '%s', '%d', '%s'));
+            $inserted  = $wpdb->insert($table_rag, array('user_id' => $user_id, 'week_num' => $week_num, 'question_id' => $question_id, 'answer' => $answer, 'score' => $score, 'created_at' => current_time('mysql')), array('%d','%d','%d','%s','%d','%s'));
 
         } elseif ($question['q_type'] === 'MBTI') {
             $answer = strtoupper(sanitize_text_field($request->get_param('rag')));
-            if (!in_array($answer, array('R', 'A', 'G'))) {
-                return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid MBTI answer'), 400);
-            }
+            if (!in_array($answer, array('R','A','G'))) return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid MBTI answer'), 400);
             $mbti_data = $this->mbti_letter_for($question_id, $answer);
-            $axis = $mbti_data[0];
-            $letter = $mbti_data[1];
+            $table_mb  = $wpdb->prefix . self::TBL_ANSWERS_MB;
+            $inserted  = $wpdb->insert($table_mb, array('user_id' => $user_id, 'week_num' => $week_num, 'question_id' => $question_id, 'answer' => $answer, 'axis' => $mbti_data[0], 'letter' => $mbti_data[1], 'created_at' => current_time('mysql')), array('%d','%d','%d','%s','%s','%s','%s'));
 
-            $table_mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
-            $inserted = $wpdb->insert($table_mb, array(
-                'user_id'     => $user_id,
-                'week_num'    => $week_num,
-                'question_id' => $question_id,
-                'answer'      => $answer,
-                'axis'        => $axis,
-                'letter'      => $letter,
-                'created_at'  => current_time('mysql'),
-            ), array('%d', '%d', '%d', '%s', '%s', '%s', '%s'));
-            
         } elseif ($question['q_type'] === 'DISC') {
-            // DISC uses numeric answer (1-5 scale from frontend)
-            $disc_answer = (int) $request->get_param('disc_answer');
-            if ($disc_answer < 1 || $disc_answer > 5) {
-                return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid DISC answer'), 400);
-            }
-            
-            // Get disc_mapping from question
+            $disc_answer = (int)$request->get_param('disc_answer');
+            if ($disc_answer < 1 || $disc_answer > 5) return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid DISC answer'), 400);
             $mapping = json_decode($question['disc_mapping'], true);
-            if (!$mapping) {
-                return new WP_REST_Response(array('ok' => false, 'error' => 'DISC mapping missing'), 400);
-            }
-            
-            // Calculate contributions (answer 1-5, minus 3 = -2 to +2)
+            if (!$mapping) return new WP_REST_Response(array('ok' => false, 'error' => 'DISC mapping missing'), 400);
             $contribution = $disc_answer - 3;
-            $d_contrib = $mapping['D'] * $contribution;
-            $i_contrib = $mapping['I'] * $contribution;
-            $s_contrib = $mapping['S'] * $contribution;
-            $c_contrib = $mapping['C'] * $contribution;
-            
-            $table_disc = $wpdb->prefix . self::TBL_ANSWERS_DISC;
-            $inserted = $wpdb->insert($table_disc, array(
-                'user_id'         => $user_id,
-                'week_num'        => $week_num,
-                'question_id'     => $question_id,
-                'answer'          => $disc_answer,
-                'd_contribution'  => $d_contrib,
-                'i_contribution'  => $i_contrib,
-                's_contribution'  => $s_contrib,
-                'c_contribution'  => $c_contrib,
-                'created_at'      => current_time('mysql'),
-            ), array('%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s'));
+            $table_disc   = $wpdb->prefix . self::TBL_ANSWERS_DISC;
+            $inserted     = $wpdb->insert($table_disc, array('user_id' => $user_id, 'week_num' => $week_num, 'question_id' => $question_id, 'answer' => $disc_answer, 'd_contribution' => $mapping['D'] * $contribution, 'i_contribution' => $mapping['I'] * $contribution, 's_contribution' => $mapping['S'] * $contribution, 'c_contribution' => $mapping['C'] * $contribution, 'created_at' => current_time('mysql')), array('%d','%d','%d','%d','%d','%d','%d','%d','%s'));
         }
 
-        if (false === $inserted) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'DB error: ' . $wpdb->last_error), 500);
-        }
-
+        if (false === $inserted) return new WP_REST_Response(array('ok' => false, 'error' => 'DB error: ' . $wpdb->last_error), 500);
         return new WP_REST_Response(array('ok' => true, 'message' => 'Saved', 'answer_id' => $wpdb->insert_id), 200);
     }
 
-private function calculate_disc_results($user_id, $week) {
+    private function calculate_disc_results($user_id, $week) {
         global $wpdb;
-        $disc = $wpdb->prefix . self::TBL_ANSWERS_DISC;
-        
-        // Get all DISC answers for this week
-        $answers = $wpdb->get_results($wpdb->prepare("
-            SELECT d_contribution, i_contribution, s_contribution, c_contribution
-            FROM $disc WHERE user_id=%d AND week_num=%d
-        ", $user_id, $week), ARRAY_A);
-        
-        if (empty($answers)) {
-            return null;
-        }
-        
-        // Calculate raw scores
-        $raw_d = 0;
-        $raw_i = 0;
-        $raw_s = 0;
-        $raw_c = 0;
-        
-        foreach ($answers as $ans) {
-            $raw_d += (int)$ans['d_contribution'];
-            $raw_i += (int)$ans['i_contribution'];
-            $raw_s += (int)$ans['s_contribution'];
-            $raw_c += (int)$ans['c_contribution'];
-        }
-        
-        // Calculate max possible score
-        $q = $wpdb->prefix . self::TBL_QUESTIONS;
-        $wkcol = 'w' . $week;
-        $disc_questions = $wpdb->get_results("
-            SELECT disc_mapping FROM $q 
-            WHERE $wkcol=1 AND q_type='DISC' AND disc_mapping IS NOT NULL
-        ", ARRAY_A);
-        
-        $max_possible = 0;
+        $disc    = $wpdb->prefix . self::TBL_ANSWERS_DISC;
+        $answers = $wpdb->get_results($wpdb->prepare("SELECT d_contribution, i_contribution, s_contribution, c_contribution FROM $disc WHERE user_id=%d AND week_num=%d", $user_id, $week), ARRAY_A);
+        if (empty($answers)) return null;
+
+        $raw_d = $raw_i = $raw_s = $raw_c = 0;
+        foreach ($answers as $ans) { $raw_d += (int)$ans['d_contribution']; $raw_i += (int)$ans['i_contribution']; $raw_s += (int)$ans['s_contribution']; $raw_c += (int)$ans['c_contribution']; }
+
+        $q      = $wpdb->prefix . self::TBL_QUESTIONS;
+        $wkcol  = 'w' . $week;
+        $disc_questions = $wpdb->get_results("SELECT disc_mapping FROM $q WHERE $wkcol=1 AND q_type='DISC' AND disc_mapping IS NOT NULL", ARRAY_A);
+        $max_possible   = 0;
         foreach ($disc_questions as $dq) {
             $mapping = json_decode($dq['disc_mapping'], true);
-            if ($mapping) {
-                $max_d = abs($mapping['D']) * 2;
-                $max_i = abs($mapping['I']) * 2;
-                $max_s = abs($mapping['S']) * 2;
-                $max_c = abs($mapping['C']) * 2;
-                $max_possible += max($max_d, $max_i, $max_s, $max_c);
-            }
+            if ($mapping) $max_possible += max(abs($mapping['D'])*2, abs($mapping['I'])*2, abs($mapping['S'])*2, abs($mapping['C'])*2);
         }
-        
-        if ($max_possible == 0) {
-            return null;
-        }
-        
-        // Normalize to 0-100
-        $norm_d = (($raw_d + $max_possible) / (2 * $max_possible)) * 100;
-        $norm_i = (($raw_i + $max_possible) / (2 * $max_possible)) * 100;
-        $norm_s = (($raw_s + $max_possible) / (2 * $max_possible)) * 100;
-        $norm_c = (($raw_c + $max_possible) / (2 * $max_possible)) * 100;
-        
-        // Ensure within bounds
-        $norm_d = max(0, min(100, $norm_d));
-        $norm_i = max(0, min(100, $norm_i));
-        $norm_s = max(0, min(100, $norm_s));
-        $norm_c = max(0, min(100, $norm_c));
-        
-        // Calculate relative percentages
-        $total = $norm_d + $norm_i + $norm_s + $norm_c;
-        
-        if ($total > 0) {
-            $pct_d = ($norm_d / $total) * 100;
-            $pct_i = ($norm_i / $total) * 100;
-            $pct_s = ($norm_s / $total) * 100;
-            $pct_c = ($norm_c / $total) * 100;
-        } else {
-            $pct_d = $pct_i = $pct_s = $pct_c = 25;
-        }
-        
-        // Determine primary style
-        $scores = array(
-            'D' => $norm_d,
-            'I' => $norm_i,
-            'S' => $norm_s,
-            'C' => $norm_c
-        );
+        if ($max_possible == 0) return null;
+
+        $norm_d = max(0, min(100, (($raw_d + $max_possible) / (2*$max_possible)) * 100));
+        $norm_i = max(0, min(100, (($raw_i + $max_possible) / (2*$max_possible)) * 100));
+        $norm_s = max(0, min(100, (($raw_s + $max_possible) / (2*$max_possible)) * 100));
+        $norm_c = max(0, min(100, (($raw_c + $max_possible) / (2*$max_possible)) * 100));
+        $total  = $norm_d + $norm_i + $norm_s + $norm_c;
+        if ($total > 0) { $pct_d = ($norm_d/$total)*100; $pct_i = ($norm_i/$total)*100; $pct_s = ($norm_s/$total)*100; $pct_c = ($norm_c/$total)*100; }
+        else { $pct_d = $pct_i = $pct_s = $pct_c = 25; }
+
+        $scores = array('D' => $norm_d, 'I' => $norm_i, 'S' => $norm_s, 'C' => $norm_c);
         arsort($scores);
-        $top_keys = array_keys($scores);
-        
+        $top_keys      = array_keys($scores);
         $primary_style = $top_keys[0];
-        if (count($top_keys) > 1 && abs($scores[$top_keys[0]] - $scores[$top_keys[1]]) < 20) {
-            $primary_style = $top_keys[0] . $top_keys[1];
-        }
-        
-        // Save results
+        if (count($top_keys) > 1 && abs($scores[$top_keys[0]] - $scores[$top_keys[1]]) < 20) $primary_style = $top_keys[0] . $top_keys[1];
+
         $discr = $wpdb->prefix . self::TBL_DISC_RESULTS;
-        $wpdb->replace($discr, array(
-            'user_id' => $user_id,
-            'week_num' => $week,
-            'd_score' => $raw_d,
-            'i_score' => $raw_i,
-            's_score' => $raw_s,
-            'c_score' => $raw_c,
-            'd_normalized' => round($norm_d, 2),
-            'i_normalized' => round($norm_i, 2),
-            's_normalized' => round($norm_s, 2),
-            'c_normalized' => round($norm_c, 2),
-            'd_percent' => round($pct_d, 2),
-            'i_percent' => round($pct_i, 2),
-            's_percent' => round($pct_s, 2),
-            'c_percent' => round($pct_c, 2),
-            'primary_style' => $primary_style
-        ), array('%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s', '%s', 
-                 '%s', '%s', '%s', '%s', '%s'));
-        
-        return array(
-            'disc_type' => $primary_style,
-            'disc_scores' => array(
-                'D' => array('normalized' => round($norm_d, 2), 'percent' => round($pct_d, 2)),
-                'I' => array('normalized' => round($norm_i, 2), 'percent' => round($pct_i, 2)),
-                'S' => array('normalized' => round($norm_s, 2), 'percent' => round($pct_s, 2)),
-                'C' => array('normalized' => round($norm_c, 2), 'percent' => round($pct_c, 2))
-            )
-        );
+        $wpdb->replace($discr, array('user_id' => $user_id, 'week_num' => $week, 'd_score' => $raw_d, 'i_score' => $raw_i, 's_score' => $raw_s, 'c_score' => $raw_c, 'd_normalized' => round($norm_d,2), 'i_normalized' => round($norm_i,2), 's_normalized' => round($norm_s,2), 'c_normalized' => round($norm_c,2), 'd_percent' => round($pct_d,2), 'i_percent' => round($pct_i,2), 's_percent' => round($pct_s,2), 'c_percent' => round($pct_c,2), 'primary_style' => $primary_style), array('%d','%d','%d','%d','%d','%d','%s','%s','%s','%s','%s','%s','%s','%s','%s'));
+
+        return array('disc_type' => $primary_style, 'disc_scores' => array(
+            'D' => array('normalized' => round($norm_d,2), 'percent' => round($pct_d,2)),
+            'I' => array('normalized' => round($norm_i,2), 'percent' => round($pct_i,2)),
+            'S' => array('normalized' => round($norm_s,2), 'percent' => round($pct_s,2)),
+            'C' => array('normalized' => round($norm_c,2), 'percent' => round($pct_c,2)),
+        ));
     }
 
     public function api_summary($req) {
         global $wpdb;
-        $week = max(1, min(6, (int)$req->get_param('week')));
+        $week    = max(1, min(6, (int)$req->get_param('week')));
         $user_id = $this->get_current_um_user_id();
-        
-        if (!$user_id) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
-        }
+        if (!$user_id) return new WP_REST_Response(array('ok' => false, 'error' => 'Not logged in'), 403);
 
-        // Check for cached summary — only use it if admin has enabled caching
-        $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
-        $cached = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",
-            $user_id, $week
-        ), ARRAY_A);
-
+        $ws        = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $cached    = $wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d", $user_id, $week), ARRAY_A);
         $use_cache = (get_option('mfsd_rag_cache_summaries', '1') === '1');
 
         if ($use_cache && $cached && !empty($cached['ai_summary'])) {
-            // Return cached summary
-            error_log("MFSD RAG: Returning cached summary for week $week, user $user_id");
-            
-            // Get previous weeks for display
             $previous_weeks = array();
             if ($week > 1) {
                 $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
                 for ($w = 1; $w < $week; $w++) {
-                    $prev_rag = $wpdb->get_row($wpdb->prepare("
-                        SELECT
-                            SUM(answer='R') AS reds,
-                            SUM(answer='A') AS ambers,
-                            SUM(answer='G') AS greens,
-                            SUM(score) AS total_score
-                        FROM $a WHERE user_id=%d AND week_num=%d
-                    ", $user_id, $w), ARRAY_A);
-
-                    $prev_mbti = $wpdb->get_var($wpdb->prepare(
-                        "SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",
-                        $user_id, $w
-                    ));
-
-                    if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) {
-                        $previous_weeks[] = array(
-                            'week' => $w,
-                            'rag' => $prev_rag,
-                            'mbti' => $prev_mbti
-                        );
-                    }
+                    $prev_rag  = $wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds, SUM(answer='A') AS ambers, SUM(answer='G') AS greens, SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $w), ARRAY_A);
+                    $prev_mbti = $wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d", $user_id, $w));
+                    if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) $previous_weeks[] = array('week' => $w, 'rag' => $prev_rag, 'mbti' => $prev_mbti);
                 }
             }
-            
-            return new WP_REST_Response(array(
-                'ok'   => true,
-                'week' => $week,
-                'rag'  => array(
-                    'reds' => (int)$cached['reds'],
-                    'ambers' => (int)$cached['ambers'],
-                    'greens' => (int)$cached['greens'],
-                    'total_score' => (int)$cached['total_score']
-                ),
-                'mbti' => $cached['mbti_type'],
-                'disc_type' => isset($cached['disc_type']) ? $cached['disc_type'] : null,
-                'disc_scores' => null,
-                'ai'   => $cached['ai_summary'],
-                'previous_weeks' => $previous_weeks,
-                'cached' => true
-            ), 200);
+            return new WP_REST_Response(array('ok' => true, 'week' => $week, 'rag' => array('reds' => (int)$cached['reds'], 'ambers' => (int)$cached['ambers'], 'greens' => (int)$cached['greens'], 'total_score' => (int)$cached['total_score']), 'mbti' => $cached['mbti_type'], 'disc_type' => isset($cached['disc_type']) ? $cached['disc_type'] : null, 'disc_scores' => null, 'ai' => $cached['ai_summary'], 'previous_weeks' => $previous_weeks, 'cached' => true), 200);
         }
 
-        error_log("MFSD RAG: Generating new summary for week $week, user $user_id");
+        $a   = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+        $agg = $wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds, SUM(answer='A') AS ambers, SUM(answer='G') AS greens, SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $week), ARRAY_A);
+        if (!$agg) $agg = array('reds' => 0, 'ambers' => 0, 'greens' => 0, 'total_score' => 0);
 
-        // Generate summary (existing code)
-        $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-        $agg = $wpdb->get_row($wpdb->prepare("
-          SELECT
-            SUM(answer='R') AS reds,
-            SUM(answer='A') AS ambers,
-            SUM(answer='G') AS greens,
-            SUM(score) AS total_score
-          FROM $a WHERE user_id=%d AND week_num=%d
-        ", $user_id, $week), ARRAY_A);
-
-        if (!$agg) {
-            $agg = array('reds' => 0, 'ambers' => 0, 'greens' => 0, 'total_score' => 0);
-        }
-
-        $mb = $wpdb->prefix . self::TBL_ANSWERS_MB;
-        $letters = $wpdb->get_results($wpdb->prepare("
-          SELECT axis, letter, COUNT(*) c FROM $mb
-          WHERE user_id=%d AND week_num=%d
-          GROUP BY axis, letter
-        ", $user_id, $week), ARRAY_A);
-
-        $type = $this->mbti_type_from_counts($letters);
-        
+        $mb      = $wpdb->prefix . self::TBL_ANSWERS_MB;
+        $letters = $wpdb->get_results($wpdb->prepare("SELECT axis, letter, COUNT(*) c FROM $mb WHERE user_id=%d AND week_num=%d GROUP BY axis, letter", $user_id, $week), ARRAY_A);
+        $type    = $this->mbti_type_from_counts($letters);
         if ($type) {
             $mbr = $wpdb->prefix . self::TBL_MB_RESULTS;
-            $wpdb->replace($mbr, array(
-                'user_id'  => $user_id,
-                'week_num' => $week,
-                'type4'    => $type,
-                'details'  => wp_json_encode($letters),
-            ), array('%d', '%d', '%s', '%s'));
-        }
-        
-        // Calculate DISC if needed
-        $disc_type = null;
-        $disc_scores = null;
-        $expected_disc = $this->get_expected_disc_count($week);
-        if ($expected_disc > 0) {
-            $disc_result = $this->calculate_disc_results($user_id, $week);
-            if ($disc_result) {
-                $disc_type = $disc_result['disc_type'];
-                $disc_scores = $disc_result['disc_scores'];
-            }
-        }
-       
-        // Get MBTI from this week OR previous weeks
-        $mbti_type_to_use = $type;  // Start with current week's MBTI
-        if (!$mbti_type_to_use && !empty($previous_weeks)) {
-            // Find most recent MBTI from previous weeks
-            foreach (array_reverse($previous_weeks) as $pw) {
-                if (!empty($pw['mbti'])) {
-                    $mbti_type_to_use = $pw['mbti'];
-                    break;
-                }
-            }
+            $wpdb->replace($mbr, array('user_id' => $user_id, 'week_num' => $week, 'type4' => $type, 'details' => wp_json_encode($letters)), array('%d','%d','%s','%s'));
         }
 
-        // Get previous weeks' data for comparison
+        $disc_type = $disc_scores = null;
+        if ($this->get_expected_disc_count($week) > 0) {
+            $disc_result = $this->calculate_disc_results($user_id, $week);
+            if ($disc_result) { $disc_type = $disc_result['disc_type']; $disc_scores = $disc_result['disc_scores']; }
+        }
+
         $previous_weeks = array();
         if ($week > 1) {
             for ($w = 1; $w < $week; $w++) {
-                $prev_rag = $wpdb->get_row($wpdb->prepare("
-                    SELECT
-                        SUM(answer='R') AS reds,
-                        SUM(answer='A') AS ambers,
-                        SUM(answer='G') AS greens,
-                        SUM(score) AS total_score
-                    FROM $a WHERE user_id=%d AND week_num=%d
-                ", $user_id, $w), ARRAY_A);
-
-                $prev_mbti = $wpdb->get_var($wpdb->prepare(
-                    "SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",
-                    $user_id, $w
-                ));
-
-                if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) {
-                    $previous_weeks[] = array(
-                        'week' => $w,
-                        'rag' => $prev_rag,
-                        'mbti' => $prev_mbti
-                    );
-                }
+                $prev_rag  = $wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds, SUM(answer='A') AS ambers, SUM(answer='G') AS greens, SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d", $user_id, $w), ARRAY_A);
+                $prev_mbti = $wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d", $user_id, $w));
+                if ($prev_rag && ($prev_rag['reds'] > 0 || $prev_rag['ambers'] > 0 || $prev_rag['greens'] > 0)) $previous_weeks[] = array('week' => $w, 'rag' => $prev_rag, 'mbti' => $prev_mbti);
             }
         }
 
-        // Get dream job and career ranking data
-        $dream_job_table = $wpdb->prefix . 'mfsd_ai_dream_jobs_results';
+        $mbti_type_to_use = $type;
+        if (!$mbti_type_to_use && !empty($previous_weeks)) {
+            foreach (array_reverse($previous_weeks) as $pw) { if (!empty($pw['mbti'])) { $mbti_type_to_use = $pw['mbti']; break; } }
+        }
+
         $dream_jobs_ranking = null;
+        $dream_job_table    = $wpdb->prefix . 'mfsd_ai_dream_jobs_results';
         if ($wpdb->get_var("SHOW TABLES LIKE '$dream_job_table'") == $dream_job_table) {
-            $dream_jobs_data = $wpdb->get_row($wpdb->prepare(
-                "SELECT ranking_json FROM $dream_job_table WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1",
-                $user_id
-            ), ARRAY_A);
-            
-            if ($dream_jobs_data && !empty($dream_jobs_data['ranking_json'])) {
-                $dream_jobs_ranking = json_decode($dream_jobs_data['ranking_json'], true);
-            }
+            $djd = $wpdb->get_row($wpdb->prepare("SELECT ranking_json FROM $dream_job_table WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1", $user_id), ARRAY_A);
+            if ($djd && !empty($djd['ranking_json'])) $dream_jobs_ranking = json_decode($djd['ranking_json'], true);
         }
 
         $aiIntro = '';
         if (isset($GLOBALS['mwai'])) {
             try {
-                $mwai = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') 
-                    ? um_get_display_name($user_id) 
-                    : get_userdata($user_id)->display_name;
-                
-                $aiPrompt = "You are a supportive coach speaking to $username (aged 12-14) about their High Performance Pathway progress.\n\n";
-$aiPrompt .= "===WEEK $week RESULTS===\n";
-$aiPrompt .= "RAG Assessment: {$agg['reds']} Reds, {$agg['ambers']} Ambers, {$agg['greens']} Greens (Total Score: {$agg['total_score']})\n";
-
-// Include MBTI (current or from previous weeks)
-if ($mbti_type_to_use) {
-    if ($type) {
-        $aiPrompt .= "MBTI Personality Type: $mbti_type_to_use (assessed this week)\n";
-    } else {
-        $aiPrompt .= "MBTI Personality Type: $mbti_type_to_use (from previous weeks)\n";
-    }
-}
-
-// Include DISC prominently if available
-if ($disc_type) {
-    $aiPrompt .= "DISC Personality Style: $disc_type (assessed this week)\n";
-    $aiPrompt .= "DISC Breakdown: D={$disc_scores['D']['percent']}%, I={$disc_scores['I']['percent']}%, S={$disc_scores['S']['percent']}%, C={$disc_scores['C']['percent']}%\n";
-}
-
-$aiPrompt .= "\n";
-
-// Add previous weeks comparison
-if (!empty($previous_weeks)) {
-    $aiPrompt .= "===PROGRESS OVER TIME===\n";
-    foreach ($previous_weeks as $pw) {
-        $aiPrompt .= "Week {$pw['week']}: {$pw['rag']['reds']}R / {$pw['rag']['ambers']}A / {$pw['rag']['greens']}G (Score: {$pw['rag']['total_score']})";
-        if ($pw['mbti']) {
-            $aiPrompt .= " | MBTI: {$pw['mbti']}";
-        }
-        $aiPrompt .= "\n";
-    }
-    $aiPrompt .= "\n";
-}
-
-// Add career information
-if (!empty($dream_jobs_ranking) && is_array($dream_jobs_ranking)) {
-    $aiPrompt .= "Their Dream Jobs (ranked):\n";
-    foreach (array_slice($dream_jobs_ranking, 0, 5) as $i => $job) {
-        $aiPrompt .= ($i + 1) . ". $job\n";
-    }
-    $aiPrompt .= "\n";
-}
-
-$aiPrompt .= "===YOUR TASK===\n";
-$aiPrompt .= "Write a warm, insightful summary that:\n";
-$aiPrompt .= "1. Celebrates their strengths (Greens) specifically\n";
-
-if (!empty($previous_weeks)) {
-    $aiPrompt .= "2. Highlights progress or trends compared to previous weeks\n";
-} else {
-    $aiPrompt .= "3. Focuses on this week's results and what they show\n";
-}
-
-// Personality assessment instructions
-if ($disc_type && $mbti_type_to_use) {
-    // Both DISC and MBTI available - compare them
-    $aiPrompt .= "4. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for how they work and communicate?\n";
-    $aiPrompt .= "5. Compare DISC ($disc_type) to MBTI ($mbti_type_to_use) - how do these personality insights work together?\n";
-    $aiPrompt .= "6. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
-    if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "7. Connects their DISC style and MBTI type to their dream jobs\n";
-    }
-    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
-} elseif ($disc_type) {
-    // Only DISC available
-    $aiPrompt .= "7. IMPORTANT: Explain their DISC style ($disc_type) in detail - what does this mean for their strengths and how they work?\n";
-    $aiPrompt .= "8. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
-    if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "7. Connects their DISC style to their dream jobs\n";
-    }
-    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
-} elseif ($mbti_type_to_use) {
-    // Only MBTI available
-    if ($type) {
-        $aiPrompt .= "7. Explains their MBTI type ($mbti_type_to_use) and key strengths\n";
-    } else {
-        $aiPrompt .= "7. References their MBTI type ($mbti_type_to_use) from previous weeks\n";
-    }
-    $aiPrompt .= "8. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
-    if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "7. Connects their personality to their dream jobs\n";
-    }
-    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
-} else {
-    // No personality assessments
-    $aiPrompt .= "3. Acknowledges areas for development (Ambers/Reds) with encouragement\n";
-    if (!empty($dream_jobs_ranking)) {
-        $aiPrompt .= "4. Connects their results to their dream jobs\n";
-    }
-    $aiPrompt .= "8. Provides 2-3 specific, actionable next steps for this week, in a bullet list\n\n";
-}
-
-$aiPrompt .= "CRITICAL: Address them directly using 'you' and 'your'. Be encouraging, specific, and practical.\n";
-//$aiPrompt .= "Use UK context. Keep to 4-5 paragraphs max. Use bullet points to help annotate points through the summary..\n";
-$aiPrompt .= "Use UK context. Use bullet points to help annotate points through the summary..\n";
-$aiPrompt .= "Use Steve's Solutions Mindset principles to help empasise a growth mindset and positive attitude throughout the summary.\n";
-$aiPrompt .= "The principles are: 1.Say to yourself What is the solution to every problem I face?, 2.If you have a solutions mindset marginal gains will occur, \n";
-$aiPrompt .= "3.There is no Failure only Feedback, 4.A smooth sea, never made a skilled sailor, 5.• If one person can do it, anyone can do it, \n";
-$aiPrompt .= "6.Happiness is a journey, not an outcome, 7.You never lose…you either win or learn, 8.Character over Calibre is the best way to succeed, \n";
-$aiPrompt .= "9.The person with the most passion has the greatest impact, 10.Hard work beats talent, when talent does not work hard,\n";
-$aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog thinks you are, 13.It is nice to be important, but more important to be nice. \n";
-
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+                $aiPrompt  = "You are a supportive coach speaking to $username (aged 12-14) about their High Performance Pathway progress.\n\n";
+                $aiPrompt .= "===WEEK $week RESULTS===\nRAG Assessment: {$agg['reds']} Reds, {$agg['ambers']} Ambers, {$agg['greens']} Greens (Total Score: {$agg['total_score']})\n";
+                if ($mbti_type_to_use) $aiPrompt .= "MBTI Personality Type: $mbti_type_to_use" . ($type ? " (assessed this week)" : " (from previous weeks)") . "\n";
+                if ($disc_type) $aiPrompt .= "DISC Personality Style: $disc_type\nDISC Breakdown: D={$disc_scores['D']['percent']}%, I={$disc_scores['I']['percent']}%, S={$disc_scores['S']['percent']}%, C={$disc_scores['C']['percent']}%\n";
+                $aiPrompt .= "\n";
+                if (!empty($previous_weeks)) { $aiPrompt .= "===PROGRESS OVER TIME===\n"; foreach ($previous_weeks as $pw) { $aiPrompt .= "Week {$pw['week']}: {$pw['rag']['reds']}R / {$pw['rag']['ambers']}A / {$pw['rag']['greens']}G (Score: {$pw['rag']['total_score']})"; if ($pw['mbti']) $aiPrompt .= " | MBTI: {$pw['mbti']}"; $aiPrompt .= "\n"; } $aiPrompt .= "\n"; }
+                if (!empty($dream_jobs_ranking)) { $aiPrompt .= "Their Dream Jobs (ranked):\n"; foreach (array_slice($dream_jobs_ranking, 0, 5) as $i => $job) $aiPrompt .= ($i+1) . ". $job\n"; $aiPrompt .= "\n"; }
+                $aiPrompt .= "===YOUR TASK===\nWrite a warm, insightful summary. Celebrate strengths, highlight progress, explain personality results, acknowledge development areas with encouragement, and provide 2-3 actionable next steps.\n";
+                $aiPrompt .= "CRITICAL: Address them directly using 'you' and 'your'. Use UK context. Use bullet points. Use Steve's Solutions Mindset principles to emphasise growth mindset throughout.\n";
+                $aiPrompt .= "Steve's principles include: There is no Failure only Feedback; A smooth sea never made a skilled sailor; You never lose, you either win or learn; Hard work beats talent when talent does not work hard.\n";
                 $aiIntro = $mwai->simpleTextQuery($aiPrompt);
-            } catch (Exception $e) { 
-                error_log('MFSD RAG: AI summary generation error: ' . $e->getMessage());
-                $aiIntro = ''; 
-            }
+            } catch (Exception $e) { error_log('MFSD RAG: AI summary error: ' . $e->getMessage()); }
         }
 
-        // Save summary to database for future use
         if (!empty($aiIntro)) {
-            $wpdb->replace($ws, array(
-                'user_id' => $user_id,
-                'week_num' => $week,
-                'reds' => (int)$agg['reds'],
-                'ambers' => (int)$agg['ambers'],
-                'greens' => (int)$agg['greens'],
-                'total_score' => (int)$agg['total_score'],
-                'mbti_type' => $type,
-                'disc_type' => $disc_type,
-                'ai_summary' => $aiIntro
-            ), array('%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s', '%s'));
-            
-            error_log("MFSD RAG: Saved summary to cache for week $week, user $user_id");
+            $wpdb->replace($ws, array('user_id' => $user_id, 'week_num' => $week, 'reds' => (int)$agg['reds'], 'ambers' => (int)$agg['ambers'], 'greens' => (int)$agg['greens'], 'total_score' => (int)$agg['total_score'], 'mbti_type' => $type, 'disc_type' => $disc_type, 'ai_summary' => $aiIntro), array('%d','%d','%d','%d','%d','%d','%s','%s','%s'));
         }
 
-       return new WP_REST_Response(array(
-            'ok'   => true,
-            'week' => $week,
-            'rag'  => $agg,
-            'mbti' => $type,
-            'disc_type' => $disc_type,
-            'disc_scores' => $disc_scores,
-            'ai'   => $aiIntro,
-            'previous_weeks' => $previous_weeks,
-            'cached' => false
-        ), 200);
+        return new WP_REST_Response(array('ok' => true, 'week' => $week, 'rag' => $agg, 'mbti' => $type, 'disc_type' => $disc_type, 'disc_scores' => $disc_scores, 'ai' => $aiIntro, 'previous_weeks' => $previous_weeks, 'cached' => false), 200);
     }
 
     private function mbti_letter_for($questionId, $answer) {
@@ -1317,145 +691,74 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
             11 => array('J/P', array('R' => 'P', 'A' => 'P', 'G' => 'J')),
             12 => array('J/P', array('R' => 'P', 'A' => 'P', 'G' => 'J')),
         );
-        
         global $wpdb;
-        $qtbl = $wpdb->prefix . self::TBL_QUESTIONS;
-        $q = $wpdb->get_row($wpdb->prepare("SELECT q_order FROM $qtbl WHERE id=%d", $questionId), ARRAY_A);
+        $qtbl   = $wpdb->prefix . self::TBL_QUESTIONS;
+        $q      = $wpdb->get_row($wpdb->prepare("SELECT q_order FROM $qtbl WHERE id=%d", $questionId), ARRAY_A);
         $qorder = isset($q['q_order']) ? (int)$q['q_order'] : 0;
-
-        $axis = 'X';
-        $letter = 'X';
-        
-        if ($qorder && isset($map[$qorder])) {
-            $axis = $map[$qorder][0];
-            $letter = isset($map[$qorder][1][$answer]) ? $map[$qorder][1][$answer] : 'X';
-        }
-        
+        $axis = $letter = 'X';
+        if ($qorder && isset($map[$qorder])) { $axis = $map[$qorder][0]; $letter = isset($map[$qorder][1][$answer]) ? $map[$qorder][1][$answer] : 'X'; }
         $axis_char = 'X';
         if (strpos($axis, 'E/I') !== false) $axis_char = 'E';
         elseif (strpos($axis, 'S/N') !== false) $axis_char = 'S';
         elseif (strpos($axis, 'T/F') !== false) $axis_char = 'T';
         elseif (strpos($axis, 'J/P') !== false) $axis_char = 'J';
-        
         return array($axis_char, $letter);
     }
 
     private function mbti_type_from_counts($rows) {
         $c = array('E' => 0, 'I' => 0, 'S' => 0, 'N' => 0, 'T' => 0, 'F' => 0, 'J' => 0, 'P' => 0);
-        
-        foreach ($rows as $r) {
-            $L = strtoupper(isset($r['letter']) ? $r['letter'] : '');
-            $cnt = isset($r['c']) ? (int)$r['c'] : 0;
-            if (isset($c[$L])) {
-                $c[$L] += $cnt;
-            }
-        }
-        
+        foreach ($rows as $r) { $L = strtoupper(isset($r['letter']) ? $r['letter'] : ''); $cnt = isset($r['c']) ? (int)$r['c'] : 0; if (isset($c[$L])) $c[$L] += $cnt; }
         if (array_sum($c) === 0) return '';
-        
-        $ei = ($c['E'] >= $c['I']) ? 'E' : 'I';
-        $sn = ($c['S'] >= $c['N']) ? 'S' : 'N';
-        $tf = ($c['T'] >= $c['F']) ? 'T' : 'F';
-        $jp = ($c['J'] >= $c['P']) ? 'J' : 'P';
-        
-        return $ei . $sn . $tf . $jp;
+        return (($c['E'] >= $c['I']) ? 'E' : 'I') . (($c['S'] >= $c['N']) ? 'S' : 'N') . (($c['T'] >= $c['F']) ? 'T' : 'F') . (($c['J'] >= $c['P']) ? 'J' : 'P');
     }
 
     private function get_current_um_user_id() {
-        if (function_exists('um_profile_id')) {
-            $pid = um_profile_id();
-            if ($pid) return (int)$pid;
-        }
+        if (function_exists('um_profile_id')) { $pid = um_profile_id(); if ($pid) return (int)$pid; }
         return (int)get_current_user_id();
     }
 
     public function api_question_chat($req) {
         global $wpdb;
-        $week = max(1, min(6, (int)$req->get_param('week')));
-        $question_id = (int)$req->get_param('question_id');
+        $week         = max(1, min(6, (int)$req->get_param('week')));
+        $question_id  = (int)$req->get_param('question_id');
         $user_message = sanitize_text_field($req->get_param('message'));
-        $user_id = $this->get_current_um_user_id();
-        
-        if (!$user_id || !$question_id || !$user_message) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid request'), 400);
-        }
+        $user_id      = $this->get_current_um_user_id();
 
-        // Get the question
-        $q_table = $wpdb->prefix . self::TBL_QUESTIONS;
-        $question = $wpdb->get_row($wpdb->prepare(
-            "SELECT * FROM $q_table WHERE id=%d", $question_id
-        ), ARRAY_A);
+        if (!$user_id || !$question_id || !$user_message) return new WP_REST_Response(array('ok' => false, 'error' => 'Invalid request'), 400);
 
-        if (!$question) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
-        }
+        $q_table  = $wpdb->prefix . self::TBL_QUESTIONS;
+        $question = $wpdb->get_row($wpdb->prepare("SELECT * FROM $q_table WHERE id=%d", $question_id), ARRAY_A);
+        if (!$question) return new WP_REST_Response(array('ok' => false, 'error' => 'Question not found'), 404);
 
-        // Get previous answers for context
         $previous = array();
         if ($week > 1 && $question['q_type'] === 'RAG') {
-            $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
-            $previous = $wpdb->get_results($wpdb->prepare(
-                "SELECT week_num, answer FROM $a 
-                 WHERE user_id=%d AND question_id=%d AND week_num < %d 
-                 ORDER BY week_num ASC",
-                $user_id, $question_id, $week
-            ), ARRAY_A);
+            $a        = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+            $previous = $wpdb->get_results($wpdb->prepare("SELECT week_num, answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num < %d ORDER BY week_num ASC", $user_id, $question_id, $week), ARRAY_A);
         }
 
-        // Generate AI response with context
         $response = '';
         if (isset($GLOBALS['mwai'])) {
             try {
-                $mwai = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') 
-                    ? um_get_display_name($user_id) 
-                    : get_userdata($user_id)->display_name;
-                
-                // Build context-aware system prompt
-                $systemPrompt = "You are a supportive AI coach speaking directly to $username (a 12-14 year old student) about Week $week of their High Performance Pathway program. ";
-                $systemPrompt .= "They are currently reflecting on this question: \"{$question['q_text']}\"\n\n";
-                
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+                $prompt   = "You are a supportive AI coach speaking directly to $username (a 12-14 year old student) about Week $week of their High Performance Pathway program. They are reflecting on: \"{$question['q_text']}\"\n\n";
                 if ($question['q_type'] === 'MBTI') {
-                    $systemPrompt .= "This is an MBTI personality assessment question. Your role is to:\n";
-                    $systemPrompt .= "- Help them understand what the question is exploring about their personality\n";
-                    $systemPrompt .= "- Guide them to answer honestly (Red = doesn't describe you, Amber = sometimes/unsure, Green = describes you well)\n";
-                    $systemPrompt .= "- Remind them there are no right or wrong answers\n";
+                    $prompt .= "This is an MBTI personality question. Help them understand it and answer honestly (Red = doesn't describe you, Amber = sometimes/unsure, Green = describes you well). Remind them there are no wrong answers.\n";
                 } else {
-                    $systemPrompt .= "This is a RAG self-assessment question about their skills and readiness. Your role is to:\n";
-                    $systemPrompt .= "- Help them reflect on their current level (Red = struggling/need support, Amber = mixed/uncertain, Green = confident/strength)\n";
-                    $systemPrompt .= "- Provide practical suggestions if they're unsure\n";
-                    $systemPrompt .= "- Encourage growth mindset thinking\n";
-                    
-                    if (!empty($previous)) {
-                        $systemPrompt .= "\nFor context, in previous weeks they answered:\n";
-                        foreach ($previous as $ans) {
-                            $label = ($ans['answer'] === 'R') ? 'Red (struggling)' : 
-                                    (($ans['answer'] === 'A') ? 'Amber (mixed)' : 'Green (confident)');
-                            $systemPrompt .= "Week {$ans['week_num']}: $label\n";
-                        }
-                    }
+                    $prompt .= "This is a RAG self-assessment question (Red = struggling, Amber = mixed, Green = confident). Help them reflect and provide practical suggestions.\n";
+                    if (!empty($previous)) { $prompt .= "\nPrevious answers:\n"; foreach ($previous as $ans) { $label = ($ans['answer'] === 'R') ? 'Red' : (($ans['answer'] === 'A') ? 'Amber' : 'Green'); $prompt .= "Week {$ans['week_num']}: $label\n"; } }
                 }
-                
-                $systemPrompt .= "\nCRITICAL: Address $username directly using 'you' and 'your'. Say 'when you faced...' NOT 'when $username faced...' or 'when he/she faced...'\n";
-                $systemPrompt .= "Keep responses concise (2-3 sentences), warm, age-appropriate, and always relate back to THIS specific question. ";
-                $systemPrompt .= "Don't go off-topic or discuss unrelated subjects. Focus on helping them answer THIS question thoughtfully.";
-                
-                // Use AI Engine to generate response
-                $fullPrompt = $systemPrompt . "\n\nStudent asks: " . $user_message;
-                $response = $mwai->simpleTextQuery($fullPrompt);
-                
+                $prompt  .= "\nCRITICAL: Use 'you' and 'your' throughout. Keep response to 2-3 sentences, warm and age-appropriate.";
+                $response = $mwai->simpleTextQuery($prompt . "\n\nStudent asks: " . $user_message);
             } catch (Exception $e) {
                 error_log('MFSD RAG: Chat error: ' . $e->getMessage());
-                $response = "I'm having trouble connecting right now. Please try asking your question again in a moment.";
+                $response = "I'm having trouble connecting right now. Please try again in a moment.";
             }
         } else {
             $response = "AI assistance is currently unavailable.";
         }
 
-        return new WP_REST_Response(array(
-            'ok' => true,
-            'response' => $response
-        ), 200);
+        return new WP_REST_Response(array('ok' => true, 'response' => $response), 200);
     }
 
     public function save_admin_settings() {
@@ -1469,6 +772,25 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
         $reveal = $_POST['mfsd_rag_text_reveal'] ?? 'block';
         update_option('mfsd_rag_text_reveal', in_array($reveal, ['block','sentence','word']) ? $reveal : 'block');
 
+        // ── Save question week assignments ────────────────────────────────
+        if (isset($_POST['mfsd_rag_question_weeks'])) {
+            global $wpdb;
+            $q_table       = $wpdb->prefix . self::TBL_QUESTIONS;
+            $all_questions = $wpdb->get_col("SELECT id FROM $q_table");
+            foreach ($all_questions as $qid) {
+                $qid   = (int)$qid;
+                $weeks = $_POST['mfsd_rag_question_weeks'][$qid] ?? [];
+                $wpdb->update($q_table, [
+                    'w1' => in_array(1, array_map('intval', $weeks)) ? 1 : 0,
+                    'w2' => in_array(2, array_map('intval', $weeks)) ? 1 : 0,
+                    'w3' => in_array(3, array_map('intval', $weeks)) ? 1 : 0,
+                    'w4' => in_array(4, array_map('intval', $weeks)) ? 1 : 0,
+                    'w5' => in_array(5, array_map('intval', $weeks)) ? 1 : 0,
+                    'w6' => in_array(6, array_map('intval', $weeks)) ? 1 : 0,
+                ], ['id' => $qid], ['%d','%d','%d','%d','%d','%d'], ['%d']);
+            }
+        }
+
         add_action('admin_notices', function() {
             echo '<div class="notice notice-success is-dismissible"><p><strong>MFSD RAG settings saved.</strong></p></div>';
         });
@@ -1476,48 +798,25 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
 
     public function api_admin_reset_week($req) {
         global $wpdb;
-        if (!current_user_can('manage_options')) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Forbidden'), 403);
-        }
+        if (!current_user_can('manage_options')) return new WP_REST_Response(array('ok' => false, 'error' => 'Forbidden'), 403);
 
         $user_id = (int)$req->get_param('user_id');
         $week    = max(1, min(6, (int)$req->get_param('week')));
-
-        if (!$user_id || !$week) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'Missing user_id or week'), 400);
-        }
+        if (!$user_id || !$week) return new WP_REST_Response(array('ok' => false, 'error' => 'Missing user_id or week'), 400);
 
         $deleted = 0;
-        $tables = array(
-            $wpdb->prefix . self::TBL_ANSWERS_RAG  => array('user_id' => $user_id, 'week_num' => $week),
-            $wpdb->prefix . self::TBL_ANSWERS_MB   => array('user_id' => $user_id, 'week_num' => $week),
-            $wpdb->prefix . self::TBL_MB_RESULTS   => array('user_id' => $user_id, 'week_num' => $week),
+        $tables  = array(
+            $wpdb->prefix . self::TBL_ANSWERS_RAG    => array('user_id' => $user_id, 'week_num' => $week),
+            $wpdb->prefix . self::TBL_ANSWERS_MB     => array('user_id' => $user_id, 'week_num' => $week),
+            $wpdb->prefix . self::TBL_MB_RESULTS     => array('user_id' => $user_id, 'week_num' => $week),
             $wpdb->prefix . self::TBL_WEEK_SUMMARIES => array('user_id' => $user_id, 'week_num' => $week),
         );
-
-        // DISC tables may exist
-        $disc_tables = array(
-            $wpdb->prefix . self::TBL_ANSWERS_DISC => array('user_id' => $user_id, 'week_num' => $week),
-            $wpdb->prefix . self::TBL_DISC_RESULTS => array('user_id' => $user_id, 'week_num' => $week),
-        );
-        foreach ($disc_tables as $tbl => $where) {
-            if ($wpdb->get_var("SHOW TABLES LIKE '$tbl'") == $tbl) {
-                $tables[$tbl] = $where;
-            }
+        foreach (array($wpdb->prefix . self::TBL_ANSWERS_DISC, $wpdb->prefix . self::TBL_DISC_RESULTS) as $tbl) {
+            if ($wpdb->get_var("SHOW TABLES LIKE '$tbl'") == $tbl) $tables[$tbl] = array('user_id' => $user_id, 'week_num' => $week);
         }
+        foreach ($tables as $tbl => $where) { $result = $wpdb->delete($tbl, $where, array('%d','%d')); if ($result !== false) $deleted += $result; }
 
-        foreach ($tables as $tbl => $where) {
-            $result = $wpdb->delete($tbl, $where, array('%d', '%d'));
-            if ($result !== false) $deleted += $result;
-        }
-
-        error_log("MFSD RAG Admin: Reset week $week for user $user_id — $deleted rows deleted");
-
-        return new WP_REST_Response(array(
-            'ok'      => true,
-            'deleted' => $deleted,
-            'message' => "Week $week reset for user ID $user_id. $deleted records removed."
-        ), 200);
+        return new WP_REST_Response(array('ok' => true, 'deleted' => $deleted, 'message' => "Week $week reset for user ID $user_id. $deleted records removed."), 200);
     }
 
     public function admin_menu() {
@@ -1527,15 +826,20 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
     public function admin_page() {
         global $wpdb;
 
-        $cache_on  = get_option('mfsd_rag_cache_summaries', '1') === '1';
-        $tts_voice = get_option('mfsd_rag_tts_voice', '');
-        $conv_mode = get_option('mfsd_rag_conversation_mode', 'polite');
+        $cache_on    = get_option('mfsd_rag_cache_summaries', '1') === '1';
+        $tts_voice   = get_option('mfsd_rag_tts_voice', '');
+        $conv_mode   = get_option('mfsd_rag_conversation_mode', 'polite');
         $text_reveal = get_option('mfsd_rag_text_reveal', 'block');
-        $reset_url = esc_url_raw(rest_url('mfsd/v1/admin-reset-week'));
-        $nonce     = wp_create_nonce('wp_rest');
+        $reset_url   = esc_url_raw(rest_url('mfsd/v1/admin-reset-week'));
+        $nonce       = wp_create_nonce('wp_rest');
+        $users       = get_users(array('orderby' => 'display_name', 'order' => 'ASC', 'number' => 500));
 
-        // Build user list for the reset tool
-        $users = get_users(array('orderby' => 'display_name', 'order' => 'ASC', 'number' => 500));
+        // Load questions for the config table
+        $q_table        = $wpdb->prefix . self::TBL_QUESTIONS;
+        $all_questions  = $wpdb->get_results("SELECT * FROM $q_table ORDER BY q_type ASC, q_order ASC", ARRAY_A);
+        $rag_questions  = array_values(array_filter($all_questions, fn($q) => $q['q_type'] === 'RAG'));
+        $mbti_questions = array_values(array_filter($all_questions, fn($q) => $q['q_type'] === 'MBTI'));
+        $disc_questions = array_values(array_filter($all_questions, fn($q) => $q['q_type'] === 'DISC'));
         ?>
         <div class="wrap">
             <h1>🎯 MFSD Weekly RAG — Admin Settings</h1>
@@ -1554,8 +858,8 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                                 <strong>Save &amp; reuse AI summaries</strong>
                             </label>
                             <p class="description">
-                                When <strong>checked</strong>, a generated AI summary is saved to the database and returned instantly on repeat visits — saves API calls and speeds up the summary screen.<br>
-                                When <strong>unchecked</strong>, a fresh AI summary is generated every time the student views their results (useful during prompt tuning / testing).
+                                When <strong>checked</strong>, a generated AI summary is saved and returned instantly on repeat visits.<br>
+                                When <strong>unchecked</strong>, a fresh AI summary is generated every time (useful during testing).
                             </p>
                         </td>
                     </tr>
@@ -1568,32 +872,18 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                         <th scope="row"><label for="mfsd_rag_tts_voice">Preferred TTS Voice</label></th>
                         <td>
                             <input type="text" id="mfsd_rag_tts_voice" name="mfsd_rag_tts_voice"
-                                   value="<?php echo esc_attr($tts_voice); ?>"
-                                   class="regular-text"
+                                   value="<?php echo esc_attr($tts_voice); ?>" class="regular-text"
                                    placeholder="e.g. Google UK English Female">
-                            <p class="description">
-                                Enter the exact voice name to use for text-to-speech on the student screens.<br>
-                                Use the <strong>Voice Browser</strong> below to hear and copy available voice names.
-                            </p>
-
-                            <!-- Live voice browser -->
+                            <p class="description">Enter the exact voice name. Use the Voice Browser below to find available voices.</p>
                             <div id="mfsd-voice-browser" style="margin-top:16px; padding:16px; background:#f6f7f7; border:1px solid #ddd; border-radius:6px; max-width:620px;">
                                 <strong>🔍 Available voices on this device / browser:</strong>
-                                <p style="color:#666; font-size:13px; margin:4px 0 10px;">
-                                    Pick any English voice below, hear it, then copy the name into the field above.
-                                </p>
+                                <p style="color:#666; font-size:13px; margin:4px 0 10px;">Pick any English voice below, hear it, then copy the name into the field above.</p>
                                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                    <select id="mfsd-voice-preview-select" style="flex:1; min-width:260px; padding:6px;">
-                                        <option value="">— loading voices —</option>
-                                    </select>
-                                    <button type="button" id="mfsd-voice-preview-btn"
-                                            class="button button-secondary">▶ Preview</button>
-                                    <button type="button" id="mfsd-voice-use-btn"
-                                            class="button button-primary">✔ Use this voice</button>
+                                    <select id="mfsd-voice-preview-select" style="flex:1; min-width:260px; padding:6px;"><option value="">— loading voices —</option></select>
+                                    <button type="button" id="mfsd-voice-preview-btn" class="button button-secondary">▶ Preview</button>
+                                    <button type="button" id="mfsd-voice-use-btn" class="button button-primary">✔ Use this voice</button>
                                 </div>
-                                <p id="mfsd-voice-copied" style="display:none; color:green; margin:8px 0 0; font-weight:600;">
-                                    ✔ Voice name copied to field above!
-                                </p>
+                                <p id="mfsd-voice-copied" style="display:none; color:green; margin:8px 0 0; font-weight:600;">✔ Voice name copied to field above!</p>
                             </div>
                         </td>
                     </tr>
@@ -1606,21 +896,9 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                         <th scope="row">How AI text appears</th>
                         <td>
                             <fieldset>
-                                <label style="display:block; margin-bottom:10px;">
-                                    <input type="radio" name="mfsd_rag_text_reveal" value="block"
-                                        <?php checked($text_reveal, 'block'); ?>>
-                                    <strong>Whole block</strong> — full answer appears immediately, then AI reads it out.
-                                </label>
-                                <label style="display:block; margin-bottom:10px;">
-                                    <input type="radio" name="mfsd_rag_text_reveal" value="sentence"
-                                        <?php checked($text_reveal, 'sentence'); ?>>
-                                    <strong>Sentence by sentence</strong> — each sentence appears in the text box as the AI begins to speak it, building up gradually.
-                                </label>
-                                <label style="display:block;">
-                                    <input type="radio" name="mfsd_rag_text_reveal" value="word"
-                                        <?php checked($text_reveal, 'word'); ?>>
-                                    <strong>Word by word</strong> — each word appears as the AI speaks it. Most engaging for students.
-                                </label>
+                                <label style="display:block; margin-bottom:10px;"><input type="radio" name="mfsd_rag_text_reveal" value="block" <?php checked($text_reveal,'block'); ?>> <strong>Whole block</strong> — full answer appears immediately, then AI reads it out.</label>
+                                <label style="display:block; margin-bottom:10px;"><input type="radio" name="mfsd_rag_text_reveal" value="sentence" <?php checked($text_reveal,'sentence'); ?>> <strong>Sentence by sentence</strong> — each sentence appears as the AI begins to speak it.</label>
+                                <label style="display:block;"><input type="radio" name="mfsd_rag_text_reveal" value="word" <?php checked($text_reveal,'word'); ?>> <strong>Word by word</strong> — each word appears as the AI speaks it.</label>
                             </fieldset>
                             <p class="description" style="margin-top:8px;">Applies to question guidance tips, chatbot replies, and the weekly AI summary.</p>
                         </td>
@@ -1634,18 +912,8 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                         <th scope="row">Mic behaviour during AI reply</th>
                         <td>
                             <fieldset>
-                                <label style="display:block; margin-bottom:10px;">
-                                    <input type="radio" name="mfsd_rag_conversation_mode" value="polite"
-                                        <?php checked($conv_mode, 'polite'); ?>>
-                                    <strong>Polite mode</strong> — mic turns off while the AI is speaking, restarts automatically once it has finished.
-                                    Best for younger students or noisy environments.
-                                </label>
-                                <label style="display:block;">
-                                    <input type="radio" name="mfsd_rag_conversation_mode" value="normal"
-                                        <?php checked($conv_mode, 'normal'); ?>>
-                                    <strong>Normal mode</strong> — mic stays open while the AI speaks. Speaking at any point immediately stops the AI and lets the student respond.
-                                    More natural for confident users.
-                                </label>
+                                <label style="display:block; margin-bottom:10px;"><input type="radio" name="mfsd_rag_conversation_mode" value="polite" <?php checked($conv_mode,'polite'); ?>> <strong>Polite mode</strong> — mic turns off while the AI is speaking, restarts once it finishes.</label>
+                                <label style="display:block;"><input type="radio" name="mfsd_rag_conversation_mode" value="normal" <?php checked($conv_mode,'normal'); ?>> <strong>Normal mode</strong> — mic stays open; speaking immediately stops the AI.</label>
                             </fieldset>
                         </td>
                     </tr>
@@ -1658,8 +926,7 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
 
             <!-- ── STUDENT WEEK RESET ──────────────────────────────────── -->
             <h2>🔄 Reset a Student's Week</h2>
-            <p>This permanently deletes all answers, MBTI/DISC results, and the cached AI summary for the chosen student and week. Use with care — this cannot be undone.</p>
-
+            <p>Permanently deletes all answers, MBTI/DISC results, and the cached AI summary for the chosen student and week. Cannot be undone.</p>
             <div id="mfsd-reset-tool" style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:20px; max-width:540px;">
                 <table class="form-table" style="margin:0;" role="presentation">
                     <tr>
@@ -1668,9 +935,7 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                             <select id="mfsd-reset-user" style="width:100%; max-width:320px; padding:6px;">
                                 <option value="">— select a student —</option>
                                 <?php foreach ($users as $u): ?>
-                                    <option value="<?php echo esc_attr($u->ID); ?>">
-                                        <?php echo esc_html($u->display_name . ' (' . $u->user_email . ')'); ?>
-                                    </option>
+                                    <option value="<?php echo esc_attr($u->ID); ?>"><?php echo esc_html($u->display_name . ' (' . $u->user_email . ')'); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </td>
@@ -1679,21 +944,66 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                         <th style="padding:8px 0;"><label for="mfsd-reset-week">Week</label></th>
                         <td style="padding:8px 0;">
                             <select id="mfsd-reset-week" style="width:120px; padding:6px;">
-                                <?php for ($w = 1; $w <= 6; $w++): ?>
-                                    <option value="<?php echo $w; ?>">Week <?php echo $w; ?></option>
-                                <?php endfor; ?>
+                                <?php for ($w = 1; $w <= 6; $w++): ?><option value="<?php echo $w; ?>">Week <?php echo $w; ?></option><?php endfor; ?>
                             </select>
                         </td>
                     </tr>
                 </table>
                 <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
-                    <button type="button" id="mfsd-reset-btn" class="button button-secondary"
-                            style="border-color:#d63638; color:#d63638;">
-                        🗑 Reset Week
-                    </button>
+                    <button type="button" id="mfsd-reset-btn" class="button button-secondary" style="border-color:#d63638; color:#d63638;">🗑 Reset Week</button>
                     <span id="mfsd-reset-status" style="font-size:14px;"></span>
                 </div>
             </div>
+
+            <hr>
+
+            <!-- ── QUESTION WEEK CONFIGURATION ────────────────────────── -->
+            <h2>📋 Question Week Configuration</h2>
+            <p>Check which weeks each question should appear in. Use the <strong>all/none</strong> toggle on each column header to quickly enable or disable a whole week for a question type.</p>
+
+            <form method="post" action="">
+                <?php wp_nonce_field('mfsd_rag_admin_save', 'mfsd_rag_admin_nonce'); ?>
+
+                <?php foreach (['RAG' => $rag_questions, 'MBTI' => $mbti_questions, 'DISC' => $disc_questions] as $type => $questions): ?>
+                    <?php if (empty($questions)) continue; ?>
+                    <h3 style="margin:24px 0 8px; color:#2c3e50; border-bottom:2px solid #eee; padding-bottom:6px;">
+                        <?php echo esc_html($type); ?> Questions (<?php echo count($questions); ?>)
+                    </h3>
+                    <table class="widefat striped" style="margin-bottom:20px;">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;">#</th>
+                                <th>Question</th>
+                                <?php for ($w = 1; $w <= 6; $w++): ?>
+                                    <th style="text-align:center; width:70px;">
+                                        Week <?php echo $w; ?><br>
+                                        <a href="#" class="mfsd-toggle-col" data-type="<?php echo esc_attr($type); ?>" data-week="<?php echo $w; ?>" style="font-size:11px; font-weight:normal; text-decoration:none;">all/none</a>
+                                    </th>
+                                <?php endfor; ?>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($questions as $q): ?>
+                                <tr>
+                                    <td style="color:#999; font-size:13px;"><?php echo (int)$q['q_order']; ?></td>
+                                    <td style="font-size:13px; line-height:1.5;"><?php echo esc_html(wp_trim_words($q['q_text'], 20, '…')); ?></td>
+                                    <?php for ($w = 1; $w <= 6; $w++): ?>
+                                        <td style="text-align:center;">
+                                            <input type="checkbox"
+                                                   name="mfsd_rag_question_weeks[<?php echo (int)$q['id']; ?>][]"
+                                                   value="<?php echo $w; ?>"
+                                                   class="mfsd-week-check mfsd-type-<?php echo esc_attr($type); ?>-w<?php echo $w; ?>"
+                                                   <?php checked((int)$q['w'.$w], 1); ?>>
+                                        </td>
+                                    <?php endfor; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endforeach; ?>
+
+                <?php submit_button('Save Question Configuration'); ?>
+            </form>
 
         </div><!-- .wrap -->
 
@@ -1726,9 +1036,7 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                 speechSynthesis.cancel();
                 const voices = speechSynthesis.getVoices();
                 const chosen = voices.find(v => v.name === voiceSel.value);
-                const utt = new SpeechSynthesisUtterance(
-                    "Hi! I'm your AI coach on the High Performance Pathway. How does this voice sound?"
-                );
+                const utt = new SpeechSynthesisUtterance("Hi! I'm your AI coach on the High Performance Pathway. How does this voice sound?");
                 utt.rate = 0.92; utt.pitch = 1.05;
                 if (chosen) utt.voice = chosen;
                 speechSynthesis.speak(utt);
@@ -1745,42 +1053,28 @@ $aiPrompt .= "11.Everybody knows more than somebody, 12.Be the person your dog t
                 const userId = document.getElementById('mfsd-reset-user').value;
                 const week   = document.getElementById('mfsd-reset-week').value;
                 const status = document.getElementById('mfsd-reset-status');
-
                 if (!userId) { status.textContent = '⚠ Please select a student.'; status.style.color = '#d63638'; return; }
-
-                const userName = document.getElementById('mfsd-reset-user').options[
-                    document.getElementById('mfsd-reset-user').selectedIndex
-                ].textContent;
-
+                const userName = document.getElementById('mfsd-reset-user').options[document.getElementById('mfsd-reset-user').selectedIndex].textContent;
                 if (!confirm('Reset Week ' + week + ' for ' + userName + '?\n\nThis will permanently delete ALL their answers and results for that week.')) return;
-
                 this.disabled = true;
-                status.textContent = 'Resetting…';
-                status.style.color = '#666';
-
+                status.textContent = 'Resetting…'; status.style.color = '#666';
                 try {
-                    const res = await fetch('<?php echo $reset_url; ?>', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-WP-Nonce': '<?php echo $nonce; ?>'
-                        },
-                        body: JSON.stringify({ user_id: parseInt(userId), week: parseInt(week) })
-                    });
+                    const res  = await fetch('<?php echo $reset_url; ?>', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo $nonce; ?>' }, body: JSON.stringify({ user_id: parseInt(userId), week: parseInt(week) }) });
                     const data = await res.json();
-                    if (data.ok) {
-                        status.textContent = '✔ ' + data.message;
-                        status.style.color = 'green';
-                    } else {
-                        status.textContent = '✘ Error: ' + (data.error || 'Unknown error');
-                        status.style.color = '#d63638';
-                    }
-                } catch(e) {
-                    status.textContent = '✘ Request failed: ' + e.message;
-                    status.style.color = '#d63638';
-                } finally {
-                    this.disabled = false;
-                }
+                    if (data.ok) { status.textContent = '✔ ' + data.message; status.style.color = 'green'; }
+                    else { status.textContent = '✘ Error: ' + (data.error || 'Unknown error'); status.style.color = '#d63638'; }
+                } catch(e) { status.textContent = '✘ Request failed: ' + e.message; status.style.color = '#d63638'; }
+                finally { this.disabled = false; }
+            });
+
+            // ── Question config — all/none column toggles ──────────────
+            document.querySelectorAll('.mfsd-toggle-col').forEach(function(link) {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const boxes      = document.querySelectorAll('.mfsd-type-' + this.dataset.type + '-w' + this.dataset.week);
+                    const anyUnchecked = Array.from(boxes).some(b => !b.checked);
+                    boxes.forEach(b => b.checked = anyUnchecked);
+                });
             });
         })();
         </script>
