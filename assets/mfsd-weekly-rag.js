@@ -42,18 +42,18 @@
       window.speechSynthesis.onvoiceschanged = loadVoices;
     },
 
-    speak(text, onEnd) {
-      if (!this.supported || !text) return;
-      const utt = new SpeechSynthesisUtterance(cleanText);
-      window.speechSynthesis.cancel();
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate   = 0.92;
-      utt.pitch  = 1.05;
-      utt.volume = 1;
-      if (this.preferredVoice) utt.voice = this.preferredVoice;
-      if (onEnd) utt.onend = onEnd;
-      window.speechSynthesis.speak(utt);
-    },
+   speak(text, onEnd) {
+    if (!this.supported || !text) return;
+    const cleanText = this._cleanForSpeech(text);
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(cleanText);
+    utt.rate   = 0.92;
+    utt.pitch  = 1.05;
+    utt.volume = 1;
+    if (this.preferredVoice) utt.voice = this.preferredVoice;
+    if (onEnd) utt.onend = onEnd;
+    window.speechSynthesis.speak(utt);
+  },
 
     stop() {
       if (!this.supported) return;
@@ -88,24 +88,7 @@
       return utt;
     },
 
-    speakWithReveal(text, element, onEnd) {
-      if (!this.supported || !text) {
-        element.textContent = text;
-        if (onEnd) onEnd();
-        return;
-      }
-      const cleanText = this._cleanForSpeech(text);
-      window.speechSynthesis.cancel();
-      element.textContent = '';
-
-      // ── Block mode ───────────────────────────────────────────────────────
-      if (textReveal === 'block') {
-        element.textContent = text;
-        this.speak(text, onEnd);
-        return;
-      }
-
-      _cleanForSpeech(text) {
+  _cleanForSpeech(text) {
   return text
     // Remove markdown bold/italic markers
     .replace(/\*\*\*(.*?)\*\*\*/g, '$1')
@@ -128,7 +111,24 @@
     .trim();
   },
 
+    speakWithReveal(text, element, onEnd) {
+      if (!this.supported || !text) {
+        element.textContent = text;
+        if (onEnd) onEnd();
+        return;
+      }
+      const cleanText = this._cleanForSpeech(text);
+      window.speechSynthesis.cancel();
+      element.textContent = '';
 
+      // ── Block mode ───────────────────────────────────────────────────────
+      if (textReveal === 'block') {
+        element.textContent = text;
+        this.speak(text, onEnd);
+        return;
+      }
+
+    
       // ── Sentence mode ────────────────────────────────────────────────────
       // Speak each sentence as its own utterance, reveal that sentence as it starts.
       // Chaining via onend is 100% reliable cross-browser — no onboundary needed.
