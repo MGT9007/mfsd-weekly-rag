@@ -529,35 +529,67 @@
     const sugContainer = el("div");
     ss.appendChild(sugContainer);
 
-    if (mfsdTTS.supported) {
-      const sp=document.createElement('span'); st.appendChild(sp);
-      ss.appendChild(mfsdTTS.makeControls(steveIntro));
-      // Read intro then reveal + speak each suggestion in sequence
-      mfsdTTS.speakWithReveal(steveIntro, sp, () => {
-        if (!suggestions.length) return;
-        sugLabel.style.display = 'block';
-        let i = 0;
-        const speakNext = () => {
-          if (i >= suggestions.length) return;
-          const sug = suggestions[i];
-          const text = 'Idea ' + (i + 1) + '. ' + sug;
+   if (mfsdTTS.supported) {
+  const sp = document.createElement('span'); st.appendChild(sp);
 
-          // Reveal this suggestion row just before it is spoken
-          const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
-          const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(i+1)+".";
-          const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
-          const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
-          const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
-          sr.appendChild(nm); sr.appendChild(inn);
-          sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
-          sugContainer.appendChild(sr);
+  // Track suggestion index outside closure so stop button can access it
+  let sugIdx = 0;
+  let suggestionChainActive = false;
 
-          i++;
-          mfsdTTS.speak(text, speakNext);
-        };
-        speakNext();
-      });
-    } else {
+  // Reveal all remaining suggestions silently (used when stop is pressed)
+  const revealRemaining = () => {
+    suggestionChainActive = false;
+    if (!suggestions.length) return;
+    sugLabel.style.display = 'block';
+    while (sugIdx < suggestions.length) {
+      const sug = suggestions[sugIdx]; sugIdx++;
+      const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
+      const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=sugIdx+".";
+      const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
+      const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+      const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
+      sr.appendChild(nm); sr.appendChild(inn);
+      sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
+      sugContainer.appendChild(sr);
+    }
+  };
+
+  // Custom controls — stop also reveals remaining suggestions
+  const introControls = document.createElement('div');
+  introControls.className = 'mfsd-tts-controls';
+  const speakBtn = document.createElement('button');
+  speakBtn.className = 'mfsd-tts-btn mfsd-tts-speak'; speakBtn.title = 'Listen'; speakBtn.innerHTML = '🔊';
+  speakBtn.onclick = (e) => { e.stopPropagation(); mfsdTTS.speak(steveIntro); };
+  const stopBtn = document.createElement('button');
+  stopBtn.className = 'mfsd-tts-btn mfsd-tts-stop'; stopBtn.title = 'Stop'; stopBtn.innerHTML = '⏹';
+  stopBtn.onclick = (e) => { e.stopPropagation(); mfsdTTS.stop(); revealRemaining(); };
+  introControls.appendChild(speakBtn); introControls.appendChild(stopBtn);
+  ss.appendChild(introControls);
+
+  // Read intro then reveal + speak each suggestion in sequence
+  mfsdTTS.speakWithReveal(steveIntro, sp, () => {
+    if (!suggestions.length) return;
+    suggestionChainActive = true;
+    sugLabel.style.display = 'block';
+    const speakNext = () => {
+      if (!suggestionChainActive) return;
+      if (sugIdx >= suggestions.length) return;
+      const sug = suggestions[sugIdx];
+      const text = 'Idea ' + (sugIdx + 1) + '. ' + sug;
+      const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
+      const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(sugIdx+1)+".";
+      const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
+      const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+      const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
+      sr.appendChild(nm); sr.appendChild(inn);
+      sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
+      sugContainer.appendChild(sr);
+      sugIdx++;
+      mfsdTTS.speak(text, speakNext);
+    };
+    speakNext();
+  });
+} else {
       // No TTS — show everything immediately
       st.textContent = steveIntro;
       if (suggestions.length > 0) {
