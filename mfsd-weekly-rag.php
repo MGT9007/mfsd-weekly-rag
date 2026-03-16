@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 5.0.5
+ * Version: 6.0.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '5.0.5';
+    const VERSION = '6.0.0';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS      = 'mfsd_rag_questions';
@@ -148,6 +148,49 @@ final class MFSD_Weekly_RAG {
     }
 
     // =========================================================================
+    // AGE HELPERS
+    // =========================================================================
+
+    /**
+     * Get a user's age from their ProfilePress DOB field (pp_dob).
+     * Returns age in years as int, or null if not set / unparseable.
+     */
+    private function get_user_age($user_id) {
+        $dob = get_user_meta($user_id, 'pp_dob', true);
+        if (!$dob) return null;
+        try {
+            $birth_date = new DateTime($dob);
+            $today      = new DateTime('today');
+            return (int)$birth_date->diff($today)->y;
+        } catch (Exception $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Returns a human-readable age string for use in AI prompts.
+     * e.g. "aged 13" or falls back to "aged 11-14" if DOB not set.
+     */
+    private function get_age_description($user_id) {
+        $age = $this->get_user_age($user_id);
+        return $age ? "aged $age" : "aged 11-14";
+    }
+
+    /**
+     * Word target for Red plans — respects admin setting and real age where available.
+     */
+    private function get_red_plan_word_target($user_id) {
+        $mode = get_option('mfsd_rag_red_plan_mode', 'fixed-50');
+        if ($mode === 'fixed-100') return 100;
+        if ($mode === 'age-specific') {
+            $age = $this->get_user_age($user_id);
+            if ($age && $age >= 13) return 100;
+            return 50;
+        }
+        return 50; // fixed-50 default
+    }
+
+    // =========================================================================
     // ASSETS / SHORTCODE
     // =========================================================================
 
@@ -231,28 +274,6 @@ final class MFSD_Weekly_RAG {
     }
 
     // =========================================================================
-    // HELPER: word target for red plans
-    // =========================================================================
-
-    private function get_red_plan_word_target($user_id) {
-        $mode = get_option('mfsd_rag_red_plan_mode', 'fixed-50');
-        if ($mode === 'fixed-100') return 100;
-        if ($mode === 'age-specific') {
-            $age = null;
-            if (function_exists('um_profile')) {
-                um_profile($user_id);
-                $dob = um_user('date_of_birth');
-                if ($dob) {
-                    try { $age = (int)(new DateTime())->diff(new DateTime($dob))->y; } catch(Exception $e) {}
-                }
-            }
-            if ($age && $age >= 13) return 100;
-            return 50;
-        }
-        return 50;
-    }
-
-    // =========================================================================
     // REST CALLBACKS
     // =========================================================================
 
@@ -308,20 +329,14 @@ final class MFSD_Weekly_RAG {
             $answered_ids=array_map('intval',array_merge($ri?:array(),$mi?:array()));
         }
 
-        // Find Red answers that have no plan saved yet
+        // Red answers with no plan yet
         $pending_red_plans = array();
         if (!empty($answered_ids)) {
             $a  = $wpdb->prefix . self::TBL_ANSWERS_RAG;
             $rp = $wpdb->prefix . self::TBL_RED_PLANS;
-            $red_qids = $wpdb->get_col($wpdb->prepare(
-                "SELECT DISTINCT question_id FROM $a WHERE user_id=%d AND week_num=%d AND answer='R'",
-                $user_id, $week
-            ));
+            $red_qids = $wpdb->get_col($wpdb->prepare("SELECT DISTINCT question_id FROM $a WHERE user_id=%d AND week_num=%d AND answer='R'",$user_id,$week));
             foreach ($red_qids as $qid) {
-                $has_plan = $wpdb->get_var($wpdb->prepare(
-                    "SELECT COUNT(*) FROM $rp WHERE user_id=%d AND week_num=%d AND question_id=%d",
-                    $user_id, $week, (int)$qid
-                ));
+                $has_plan = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $rp WHERE user_id=%d AND week_num=%d AND question_id=%d",$user_id,$week,(int)$qid));
                 if (!$has_plan) $pending_red_plans[] = (int)$qid;
             }
         }
@@ -334,7 +349,20 @@ final class MFSD_Weekly_RAG {
             $pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",$user_id,$pw));
             if ($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0)) {
                 $previous_week_summary=array('week'=>$pw,'reds'=>(int)$pr['reds'],'ambers'=>(int)$pr['ambers'],'greens'=>(int)$pr['greens'],'total_score'=>(int)$pr['total_score'],'mbti_type'=>$pm);
-                if (isset($GLOBALS['mwai'])) { try { $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($user_id):get_userdata($user_id)->display_name; $intro_message=$mwai->simpleTextQuery("You are SteveGPT speaking directly to $username (12-14). Last week Week $pw: {$pr['greens']} Greens, {$pr['ambers']} Ambers, {$pr['reds']} Reds".($pm?" MBTI:$pm":"").". Write a brief warm welcome for Week $week (3-4 sentences). Use 'you'/'your' only. NEVER say 'your child'."); } catch(Exception $e){} }
+                if (isset($GLOBALS['mwai'])) {
+                    try {
+                        $mwai    = $GLOBALS['mwai'];
+                        $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+                        $age_desc = $this->get_age_description($user_id);
+                        $intro_message = $mwai->simpleTextQuery(
+                            "You are SteveGPT speaking directly to $username ($age_desc). " .
+                            "Last week Week $pw: {$pr['greens']} Greens, {$pr['ambers']} Ambers, {$pr['reds']} Reds" . ($pm ? " MBTI:$pm" : "") . ". " .
+                            "Write a brief warm welcome for Week $week (3-4 sentences). " .
+                            "Use 'you'/'your' only. NEVER say 'your child'. " .
+                            "Pitch the language and vocabulary appropriately for someone $age_desc."
+                        );
+                    } catch(Exception $e) {}
+                }
             }
         }
 
@@ -384,45 +412,43 @@ final class MFSD_Weekly_RAG {
             $previous=$wpdb->get_results($wpdb->prepare("SELECT week_num,answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num<%d GROUP BY week_num ORDER BY week_num ASC",$uid,$qid,$week),ARRAY_A);
         }
 
-        // Fetch any red plan made for this question in the previous week
         $prev_red_plan = null;
         if ($week > 1) {
             $rp = $wpdb->prefix . self::TBL_RED_PLANS;
-            $prev_red_plan = $wpdb->get_row($wpdb->prepare(
-                "SELECT week_num, plan_text FROM $rp WHERE user_id=%d AND question_id=%d AND week_num=%d",
-                $uid, $qid, $week - 1
-            ), ARRAY_A);
+            $prev_red_plan = $wpdb->get_row($wpdb->prepare("SELECT week_num,plan_text FROM $rp WHERE user_id=%d AND question_id=%d AND week_num=%d",$uid,$qid,$week-1),ARRAY_A);
         }
 
         $guidance='';
         if (isset($GLOBALS['mwai'])) {
             try {
-                $mwai=$GLOBALS['mwai'];
-                $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
+                $age_desc = $this->get_age_description($uid);
 
                 if ($question['q_type']==='MBTI') {
-                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username, a student aged 12-14 completing their own personality assessment.\n\n";
-                    $prompt .= "CRITICAL: Address $username as 'you'/'your' only. NEVER say 'your child' or refer to them in third person.\n\n";
+                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc) completing their own personality assessment.\n\n";
+                    $prompt .= "CRITICAL: Address $username as 'you'/'your' only. NEVER say 'your child' or third person.\n";
+                    $prompt .= "Pitch language and vocabulary appropriately for someone $age_desc.\n\n";
                     $prompt .= "Question: \"{$question['q_text']}\"\n\n";
                     $prompt .= "Write 2-3 sentences explaining what this MBTI question explores and how to answer (Red=doesn't describe you, Amber=sometimes, Green=describes you well). Remind them there are no right or wrong answers.";
                 } else {
-                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username, who is a student aged 12-14 completing their own self-assessment.\n\n";
+                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc) completing their own self-assessment.\n\n";
                     $prompt .= "CRITICAL RULES:\n";
-                    $prompt .= "- You are talking TO $username, not about them or to their parents\n";
-                    $prompt .= "- NEVER say 'your child', 'they', 'their' or any third-person reference\n";
-                    $prompt .= "- ALWAYS use 'you' and 'your' — e.g. 'you feel' not 'your child feels'\n\n";
+                    $prompt .= "- Address $username as 'you'/'your' only. NEVER say 'your child' or use third person.\n";
+                    $prompt .= "- Pitch all language and vocabulary appropriately for someone $age_desc.\n\n";
                     $prompt .= "Question: \"{$question['q_text']}\"\n\n";
                     $prompt .= "Write 3-4 sentences explaining what to reflect on and how to answer (Red=struggling, Amber=mixed, Green=confident).";
                     if (!empty($previous)) {
-                        $prompt.="\nPrevious answers: "; foreach($previous as $ans) $prompt.="Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." ";
-                        $prompt.="\nAcknowledge their progress, speaking directly to them.";
+                        $prompt .= "\nPrevious answers: ";
+                        foreach ($previous as $ans) $prompt .= "Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." ";
+                        $prompt .= "\nAcknowledge their progress, speaking directly to them.";
                     }
                     if ($prev_red_plan) {
                         $prompt .= "\n\nIMPORTANT: Last week (Week {$prev_red_plan['week_num']}), $username made this plan to improve: \"{$prev_red_plan['plan_text']}\". Acknowledge this plan warmly — how did they get on?";
                     }
                 }
-                $guidance=$mwai->simpleTextQuery($prompt);
-            } catch(Exception $e){ error_log('MFSD RAG guidance: '.$e->getMessage()); }
+                $guidance = $mwai->simpleTextQuery($prompt);
+            } catch(Exception $e) { error_log('MFSD RAG guidance: '.$e->getMessage()); }
         }
 
         return new WP_REST_Response(array('ok'=>true,'guidance'=>$guidance,'question'=>$question['q_text'],'type'=>$question['q_type']),200);
@@ -487,32 +513,39 @@ final class MFSD_Weekly_RAG {
 
         if (isset($GLOBALS['mwai'])) {
             try {
-                $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($user_id):get_userdata($user_id)->display_name;
-                $prompt  = "You are SteveGPT, a supportive AI coach for $username (aged 12-14) on their High Performance Pathway.\n\n";
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+                $age_desc = $this->get_age_description($user_id);
+
+                $prompt  = "You are SteveGPT, a supportive AI coach for $username ($age_desc) on their High Performance Pathway.\n";
+                $prompt .= "Pitch all language and vocabulary appropriately for someone $age_desc.\n";
+                $prompt .= "Address $username as 'you'. No asterisks or markdown.\n\n";
                 $prompt .= "They just answered RED to: \"{$question['q_text']}\"\n\n";
+
                 $last_plan = !empty($prev_plans) ? $prev_plans[0] : null;
-                if ($last_plan && $prev_answer==='R') {
+                if ($last_plan && $prev_answer === 'R') {
                     $prompt .= "CONTEXT: Last week (Week {$last_plan['week_num']}) they made this plan:\n\"{$last_plan['plan_text']}\"\nHowever they have answered Red again. Write a warm intro (2-3 sentences) acknowledging they tried, gently asking what got in the way, and setting up a better plan this time.\n\n";
-                } elseif ($last_plan && $prev_answer!=='R') {
+                } elseif ($last_plan && $prev_answer !== 'R') {
                     $prompt .= "CONTEXT: They had improved previously but returned to Red. Write a warm intro (2-3 sentences) acknowledging this can happen and encouraging them to make a plan.\n\n";
                 } else {
                     $prompt .= "Write a warm intro (2-3 sentences): thank them for being honest, say a Red means they're self-aware, set up that you'll suggest ideas.\n\n";
                 }
                 $prompt .= "Then give exactly 3 practical suggestions to help them improve by next week.\n";
                 $prompt .= "Format EXACTLY as:\nINTRO: [intro text]\nSUGGESTION_1: [suggestion]\nSUGGESTION_2: [suggestion]\nSUGGESTION_3: [suggestion]\n\n";
-                $prompt .= "Each suggestion 1-2 sentences, practical, age-appropriate. Address $username as 'you'. No asterisks or markdown.";
+                $prompt .= "Each suggestion 1-2 sentences, practical, age-appropriate for someone $age_desc.";
+
                 $response = $mwai->simpleTextQuery($prompt);
                 foreach (explode("\n",$response) as $line) {
-                    $line=trim($line);
-                    if (strpos($line,'INTRO:')===0) $steve_intro=trim(substr($line,6));
-                    elseif (preg_match('/^SUGGESTION_\d+:\s*(.+)/',$line,$m)) $suggestions[]=trim($m[1]);
+                    $line = trim($line);
+                    if (strpos($line,'INTRO:')===0) $steve_intro = trim(substr($line,6));
+                    elseif (preg_match('/^SUGGESTION_\d+:\s*(.+)/',$line,$m)) $suggestions[] = trim($m[1]);
                 }
-                if (!$steve_intro) $steve_intro="Thanks for being honest — a Red means you know where to grow! Let's make a plan together.";
-                if (empty($suggestions)) $suggestions=array("Try practising this skill for just 5 minutes each day this week.","Talk to someone you trust about this.","Set one small, specific goal for this week that you can actually measure.");
+                if (!$steve_intro) $steve_intro = "Thanks for being honest — a Red means you know where to grow! Let's make a plan together.";
+                if (empty($suggestions)) $suggestions = array("Try practising this skill for just 5 minutes each day this week.","Talk to someone you trust about this.","Set one specific goal you can achieve by next week.");
             } catch(Exception $e) {
                 error_log('MFSD RAG red suggestions: '.$e->getMessage());
-                $steve_intro="Thanks for being honest. Let's build a plan to move this forward!";
-                $suggestions=array("Try a small daily practice related to this question.","Ask someone you trust for advice or support.","Set one specific goal you can achieve by next week.");
+                $steve_intro = "Thanks for being honest. Let's build a plan to move this forward!";
+                $suggestions = array("Try a small daily practice related to this question.","Ask someone you trust for advice or support.","Set one specific goal you can achieve by next week.");
             }
         }
 
@@ -543,25 +576,31 @@ final class MFSD_Weekly_RAG {
         $qt=$wpdb->prefix.self::TBL_QUESTIONS; $q=$wpdb->get_row($wpdb->prepare("SELECT * FROM $qt WHERE id=%d",$question_id),ARRAY_A);
         if (!$q) return new WP_REST_Response(array('ok'=>false,'error'=>'Question not found'),404);
         $prev=array(); if($week>1&&$q['q_type']==='RAG'){$a=$wpdb->prefix.self::TBL_ANSWERS_RAG;$prev=$wpdb->get_results($wpdb->prepare("SELECT week_num,answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num<%d ORDER BY week_num ASC",$uid,$question_id,$week),ARRAY_A);}
+
         $resp='';
-        if (isset($GLOBALS['mwai'])){try{
-            $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
-            if ($is_red_followup) {
-                $p  = "You are SteveGPT, a supportive AI coach for $username (12-14).\n";
-                $p .= "They answered RED to: \"{$q['q_text']}\"\n";
-                $p .= "They are working on a plan to improve to Amber. Give practical, encouraging suggestions.\n";
-                $p .= "Address $username as 'you'. NEVER say 'your child'. 2-3 sentences.\n\nStudent: $msg";
-            } else {
-                $p  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username (12-14), Week $week, High Performance Pathway.\n";
-                $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child' or third person.\n";
-                $p .= "Question: \"{$q['q_text']}\"\n";
-                if($q['q_type']==='MBTI') $p.="MBTI question (Red=doesn't describe you, Amber=sometimes, Green=describes you well).\n";
-                else{$p.="RAG question (Red=struggling, Amber=mixed, Green=confident).\n";if(!empty($prev)){$p.="Previous: ";foreach($prev as $pa)$p.="W{$pa['week_num']}:".($pa['answer']==='R'?'R':($pa['answer']==='A'?'A':'G'))." ";}}
-                $p.="2-3 sentences, warm.\n\nStudent: $msg";
-            }
-            $resp=$mwai->simpleTextQuery($p);
-        }catch(Exception $e){$resp="I'm having trouble connecting right now. Please try again.";}}
-        else $resp="AI assistance is currently unavailable.";
+        if (isset($GLOBALS['mwai'])) {
+            try {
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
+                $age_desc = $this->get_age_description($uid);
+
+                if ($is_red_followup) {
+                    $p  = "You are SteveGPT, a supportive AI coach for $username ($age_desc).\n";
+                    $p .= "They answered RED to: \"{$q['q_text']}\"\n";
+                    $p .= "They are working on a plan to improve to Amber. Give practical, encouraging suggestions.\n";
+                    $p .= "Address $username as 'you'. NEVER say 'your child'. Pitch language for someone $age_desc. 2-3 sentences.\n\nStudent: $msg";
+                } else {
+                    $p  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc), Week $week, High Performance Pathway.\n";
+                    $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'. Pitch language for someone $age_desc.\n";
+                    $p .= "Question: \"{$q['q_text']}\"\n";
+                    if ($q['q_type']==='MBTI') $p .= "MBTI question (Red=doesn't describe you, Amber=sometimes, Green=describes you well).\n";
+                    else { $p.="RAG question (Red=struggling, Amber=mixed, Green=confident).\n"; if(!empty($prev)){$p.="Previous: ";foreach($prev as $pa)$p.="W{$pa['week_num']}:".($pa['answer']==='R'?'R':($pa['answer']==='A'?'A':'G'))." ";} }
+                    $p .= "2-3 sentences, warm.\n\nStudent: $msg";
+                }
+                $resp = $mwai->simpleTextQuery($p);
+            } catch(Exception $e) { $resp = "I'm having trouble connecting right now. Please try again."; }
+        } else { $resp = "AI assistance is currently unavailable."; }
+
         return new WP_REST_Response(array('ok'=>true,'response'=>$resp),200);
     }
 
@@ -569,11 +608,13 @@ final class MFSD_Weekly_RAG {
         global $wpdb;
         $week=$week=max(1,min(6,(int)$req->get_param('week'))); $uid=$this->get_current_um_user_id();
         if (!$uid) return new WP_REST_Response(array('ok'=>false,'error'=>'Not logged in'),403);
+
         $ws=$wpdb->prefix.self::TBL_WEEK_SUMMARIES; $cached=$wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A); $use_cache=(get_option('mfsd_rag_cache_summaries','1')==='1');
         if ($use_cache&&$cached&&!empty($cached['ai_summary'])) {
             $pw=array(); if($week>1){$a=$wpdb->prefix.self::TBL_ANSWERS_RAG;for($w=1;$w<$week;$w++){$pr=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A);$pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",$uid,$w));if($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0))$pw[]=array('week'=>$w,'rag'=>$pr,'mbti'=>$pm);}}
             return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>array('reds'=>(int)$cached['reds'],'ambers'=>(int)$cached['ambers'],'greens'=>(int)$cached['greens'],'total_score'=>(int)$cached['total_score']),'mbti'=>$cached['mbti_type'],'disc_type'=>isset($cached['disc_type'])?$cached['disc_type']:null,'disc_scores'=>null,'ai'=>$cached['ai_summary'],'previous_weeks'=>$pw,'cached'=>true),200);
         }
+
         $a=$wpdb->prefix.self::TBL_ANSWERS_RAG; $agg=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A);
         if (!$agg) $agg=array('reds'=>0,'ambers'=>0,'greens'=>0,'total_score'=>0);
         $mb=$wpdb->prefix.self::TBL_ANSWERS_MB; $letters=$wpdb->get_results($wpdb->prepare("SELECT axis,letter,COUNT(*) c FROM $mb WHERE user_id=%d AND week_num=%d GROUP BY axis,letter",$uid,$week),ARRAY_A); $type=$this->mbti_type_from_counts($letters);
@@ -583,12 +624,13 @@ final class MFSD_Weekly_RAG {
         $mtu=$type; if(!$mtu&&!empty($pw)){foreach(array_reverse($pw) as $p){if(!empty($p['mbti'])){$mtu=$p['mbti'];break;}}}
         $djr=null; $djt=$wpdb->prefix.'mfsd_ai_dream_jobs_results'; if($wpdb->get_var("SHOW TABLES LIKE '$djt'")==$djt){$djd=$wpdb->get_row($wpdb->prepare("SELECT ranking_json FROM $djt WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1",$uid),ARRAY_A);if($djd&&!empty($djd['ranking_json']))$djr=json_decode($djd['ranking_json'],true);}
 
+        // Red plan follow-up context
         $plan_context = '';
         if ($week > 1) {
             $rp=$wpdb->prefix.self::TBL_RED_PLANS;
             $prev_week_plans=$wpdb->get_results($wpdb->prepare("SELECT rp.question_id,rp.plan_text,rp.week_num,q.q_text FROM $rp rp JOIN {$wpdb->prefix}".self::TBL_QUESTIONS." q ON q.id=rp.question_id WHERE rp.user_id=%d AND rp.week_num=%d",$uid,$week-1),ARRAY_A);
             if (!empty($prev_week_plans)) {
-                $plan_context="\n===RED PLAN FOLLOW-UP===\nLast week the student made improvement plans for Red questions. Here is how they did this week:\n\n";
+                $plan_context="\n===RED PLAN FOLLOW-UP===\nLast week the student made improvement plans for Red questions:\n\n";
                 foreach ($prev_week_plans as $plan) {
                     $twa=$wpdb->get_var($wpdb->prepare("SELECT answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num=%d LIMIT 1",$uid,$plan['question_id'],$week));
                     $outcome='not yet answered';
@@ -597,23 +639,30 @@ final class MFSD_Weekly_RAG {
                     elseif ($twa==='R') $outcome='still Red — plan needs revisiting';
                     $plan_context.="Question: \"{$plan['q_text']}\"\nPlan: \"{$plan['plan_text']}\"\nThis week: $outcome\n\n";
                 }
-                $plan_context.="In the summary: celebrate Red→Green warmly, for Red→Amber ask what worked, for Red→Red ask what got in the way and encourage them.\n";
+                $plan_context.="Celebrate Red→Green warmly, for Red→Amber ask what worked, for Red→Red ask what got in the way and encourage them.\n";
             }
         }
 
         $aiIntro='';
-        if (isset($GLOBALS['mwai'])) { try { $mwai=$GLOBALS['mwai']; $username=function_exists('um_get_display_name')?um_get_display_name($uid):get_userdata($uid)->display_name;
-            $p ="You are SteveGPT, a supportive coach speaking DIRECTLY TO $username (aged 12-14) about their High Performance Pathway.\n";
-            $p.="CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'.\n\n";
-            $p.="WEEK $week RESULTS:\nRAG: {$agg['reds']}R {$agg['ambers']}A {$agg['greens']}G (Score:{$agg['total_score']})\n";
-            if($mtu)$p.="MBTI: $mtu".($type?" (this week)":" (previous weeks)")."\n"; if($disc_type)$p.="DISC: $disc_type — D={$disc_scores['D']['percent']}% I={$disc_scores['I']['percent']}% S={$disc_scores['S']['percent']}% C={$disc_scores['C']['percent']}%\n";
-            if(!empty($pw)){$p.="\nPROGRESS:\n";foreach($pw as $wpw)$p.="Week{$wpw['week']}: {$wpw['rag']['reds']}R/{$wpw['rag']['ambers']}A/{$wpw['rag']['greens']}G".($wpw['mbti']?" MBTI:{$wpw['mbti']}":"")."\n";}
-            if(!empty($djr)){$p.="\nDREAM JOBS:\n";foreach(array_slice($djr,0,5) as $i=>$j)$p.=($i+1).". $j\n";}
-            $p.=$plan_context;
-            $p.="Write a warm, insightful summary: celebrate strengths, note progress, explain personality, acknowledge development areas, give 2-3 actionable steps.\n";
-            $p.="UK context. Bullet points. Apply Steve's Solutions Mindset: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
-            $aiIntro=$mwai->simpleTextQuery($p);
-        } catch(Exception $e){error_log('MFSD RAG summary: '.$e->getMessage());} }
+        if (isset($GLOBALS['mwai'])) {
+            try {
+                $mwai     = $GLOBALS['mwai'];
+                $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
+                $age_desc = $this->get_age_description($uid);
+
+                $p  = "You are SteveGPT, a supportive coach speaking DIRECTLY TO $username ($age_desc) about their High Performance Pathway.\n";
+                $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'. Pitch all language for someone $age_desc.\n\n";
+                $p .= "WEEK $week RESULTS:\nRAG: {$agg['reds']}R {$agg['ambers']}A {$agg['greens']}G (Score:{$agg['total_score']})\n";
+                if ($mtu) $p .= "MBTI: $mtu" . ($type ? " (this week)" : " (previous weeks)") . "\n";
+                if ($disc_type) $p .= "DISC: $disc_type — D={$disc_scores['D']['percent']}% I={$disc_scores['I']['percent']}% S={$disc_scores['S']['percent']}% C={$disc_scores['C']['percent']}%\n";
+                if (!empty($pw)){$p.="\nPROGRESS:\n";foreach($pw as $wpw)$p.="Week{$wpw['week']}: {$wpw['rag']['reds']}R/{$wpw['rag']['ambers']}A/{$wpw['rag']['greens']}G".($wpw['mbti']?" MBTI:{$wpw['mbti']}":"")."\n";}
+                if (!empty($djr)){$p.="\nDREAM JOBS:\n";foreach(array_slice($djr,0,5) as $i=>$j)$p.=($i+1).". $j\n";}
+                $p .= $plan_context;
+                $p .= "Write a warm, insightful summary: celebrate strengths, note progress, explain personality, acknowledge development areas, give 2-3 actionable steps.\n";
+                $p .= "UK context. Bullet points. Apply Steve's Solutions Mindset: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
+                $aiIntro = $mwai->simpleTextQuery($p);
+            } catch(Exception $e) { error_log('MFSD RAG summary: '.$e->getMessage()); }
+        }
 
         if (!empty($aiIntro)){$wpdb->replace($ws,array('user_id'=>$uid,'week_num'=>$week,'reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'ai_summary'=>$aiIntro),array('%d','%d','%d','%d','%d','%d','%s','%s','%s'));}
         return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>$agg,'mbti'=>$type,'disc_type'=>$disc_type,'disc_scores'=>$disc_scores,'ai'=>$aiIntro,'previous_weeks'=>$pw,'cached'=>false),200);
@@ -751,8 +800,9 @@ final class MFSD_Weekly_RAG {
             <table class="form-table"><tr><th>Words required for Red plans</th><td><fieldset>
                 <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_red_plan_mode" value="fixed-50" <?php checked($red_plan_mode,'fixed-50');?>> <strong>Fixed 50 words</strong> — all students.</label>
                 <label style="display:block;margin-bottom:8px;"><input type="radio" name="mfsd_rag_red_plan_mode" value="fixed-100" <?php checked($red_plan_mode,'fixed-100');?>> <strong>Fixed 100 words</strong> — all students.</label>
-                <label style="display:block;"><input type="radio" name="mfsd_rag_red_plan_mode" value="age-specific" <?php checked($red_plan_mode,'age-specific');?>> <strong>Age-specific</strong> — 50 words ages 11–12, 100 words ages 13–14 (requires DOB in UM profile).</label>
-            </fieldset></td></tr></table>
+                <label style="display:block;"><input type="radio" name="mfsd_rag_red_plan_mode" value="age-specific" <?php checked($red_plan_mode,'age-specific');?>> <strong>Age-specific</strong> — 50 words ages 11–12, 100 words ages 13–14 (reads <code>pp_dob</code> from ProfilePress).</label>
+            </fieldset><p class="description" style="margin-top:8px;">Age-specific mode also pitches all AI language to the student's exact age throughout the RAG session.</p>
+            </td></tr></table>
             <?php submit_button('Save Settings');?>
         </form>
         <?php elseif($active_tab==='questions'):?>
