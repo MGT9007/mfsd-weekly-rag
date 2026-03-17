@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 6.0.0
+ * Version: 7.0.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '6.0.0';
+    const VERSION = '7.0.0';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS      = 'mfsd_rag_questions';
@@ -207,6 +207,25 @@ final class MFSD_Weekly_RAG {
             $title = get_the_title();
             if (preg_match('/Week\s*([1-6])\s*RAG/i', $title, $m)) $week = (int)$m[1];
         }
+
+        // ── Ordering gate ──────────────────────────────────────────────────
+        if ( function_exists( 'mfsd_get_task_status' ) && get_option( 'mfsd_rag_course_management', '1' ) === '1' ) {
+            $student_id = get_current_user_id();
+            $task_slug  = 'rag_week_' . $week;
+            $status     = mfsd_get_task_status( $student_id, $task_slug );
+
+            if ( $status === 'locked' ) {
+                if ( function_exists( 'mfsd_ordering_locked_message' ) ) {
+                    return mfsd_ordering_locked_message( $task_slug );
+                }
+                return '<p style="text-align:center;padding:40px;color:#555;">This activity is not available yet. Please complete the previous activity first.</p>';
+            }
+            // 'available', 'in_progress', 'completed' all fall through.
+            // in_progress is set on first answer (api_answer), not on page load,
+            // because simply viewing the RAG is not meaningful as a started signal.
+        }
+        // ── End ordering gate ──────────────────────────────────────────────
+
         wp_localize_script('mfsd-weekly-rag', 'MFSD_RAG_CFG', array(
             'restUrlQuestions'      => esc_url_raw(rest_url('mfsd/v1/questions')),
             'restUrlAnswer'         => esc_url_raw(rest_url('mfsd/v1/answer')),
@@ -260,6 +279,11 @@ final class MFSD_Weekly_RAG {
         register_rest_route('mfsd/v1', '/admin-reset-week', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_admin_reset_week'),
+            'permission_callback' => function() { return current_user_can('manage_options'); },
+        ));
+        register_rest_route('mfsd/v1', '/admin-reset-cm-progress', array(
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => array($this, 'api_admin_reset_cm_progress'),
             'permission_callback' => function() { return current_user_can('manage_options'); },
         ));
     }
@@ -487,6 +511,17 @@ final class MFSD_Weekly_RAG {
             $inserted=$wpdb->insert($t,array('user_id'=>$uid,'week_num'=>$wn,'question_id'=>$qid,'answer'=>$da,'d_contribution'=>$mapping['D']*$c,'i_contribution'=>$mapping['I']*$c,'s_contribution'=>$mapping['S']*$c,'c_contribution'=>$mapping['C']*$c,'created_at'=>current_time('mysql')),array('%d','%d','%d','%d','%d','%d','%d','%d','%s'));
         }
         if (false===$inserted) return new WP_REST_Response(array('ok'=>false,'error'=>'DB error: '.$wpdb->last_error),500);
+
+        // ── Ordering: mark in_progress on first answer ─────────────────────
+        if ( function_exists( 'mfsd_set_task_status' ) && get_option( 'mfsd_rag_course_management', '1' ) === '1' ) {
+            $task_slug = 'rag_week_' . $wn;
+            $current   = mfsd_get_task_status( $uid, $task_slug );
+            if ( $current === 'available' ) {
+                mfsd_set_task_status( $uid, $task_slug, 'in_progress' );
+            }
+        }
+        // ──────────────────────────────────────────────────────────────────
+
         return new WP_REST_Response(array('ok'=>true,'message'=>'Saved','answer_id'=>$wpdb->insert_id),200);
     }
 
@@ -664,7 +699,14 @@ final class MFSD_Weekly_RAG {
             } catch(Exception $e) { error_log('MFSD RAG summary: '.$e->getMessage()); }
         }
 
-        if (!empty($aiIntro)){$wpdb->replace($ws,array('user_id'=>$uid,'week_num'=>$week,'reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'ai_summary'=>$aiIntro),array('%d','%d','%d','%d','%d','%d','%s','%s','%s'));}
+        if (!empty($aiIntro)){$wpdb->replace($ws,array('user_id'=>$uid,'week_num'=>$week,'reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'ai_summary'=>$aiIntro),array('%d','%d','%d','%d','%d','%d','%s','%s','%s'));
+
+            // ── Ordering: mark completed when summary saved ────────────────
+            if ( function_exists( 'mfsd_set_task_status' ) && get_option( 'mfsd_rag_course_management', '1' ) === '1' ) {
+                mfsd_set_task_status( $uid, 'rag_week_' . $week, 'completed' );
+            }
+            // ──────────────────────────────────────────────────────────────
+        }
         return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>$agg,'mbti'=>$type,'disc_type'=>$disc_type,'disc_scores'=>$disc_scores,'ai'=>$aiIntro,'previous_weeks'=>$pw,'cached'=>false),200);
     }
 
@@ -720,6 +762,26 @@ final class MFSD_Weekly_RAG {
         return new WP_REST_Response(array('ok'=>true,'deleted'=>$del,'message'=>"Week $week reset for user ID $uid. $del records removed."),200);
     }
 
+    public function api_admin_reset_cm_progress($req) {
+        if (!current_user_can('manage_options')) return new WP_REST_Response(array('ok'=>false,'error'=>'Forbidden'),403);
+        $uid       = (int)$req->get_param('user_id');
+        $task_slug = sanitize_key($req->get_param('task_slug'));
+        if (!$uid || !$task_slug) return new WP_REST_Response(array('ok'=>false,'error'=>'Missing params'),400);
+        global $wpdb;
+        $deleted = $wpdb->delete(
+            $wpdb->prefix . 'mfsd_task_progress',
+            array('student_id' => $uid, 'task_slug' => $task_slug),
+            array('%d', '%s')
+        );
+        $u    = get_user_by('id', $uid);
+        $name = $u ? $u->display_name : 'User ' . $uid;
+        return new WP_REST_Response(array(
+            'ok'      => true,
+            'deleted' => (int) $deleted,
+            'message' => "Ordering progress for {$task_slug} reset for {$name}.",
+        ), 200);
+    }
+
     // =========================================================================
     // ADMIN
     // =========================================================================
@@ -729,6 +791,7 @@ final class MFSD_Weekly_RAG {
         if (!wp_verify_nonce($_POST['mfsd_rag_admin_nonce'], 'mfsd_rag_admin_save')) return;
         if (!current_user_can('manage_options')) return;
         update_option('mfsd_rag_cache_summaries',  isset($_POST['mfsd_rag_cache_summaries']) ? '1' : '0');
+        update_option('mfsd_rag_course_management', isset($_POST['mfsd_rag_course_management']) ? '1' : '0');
         update_option('mfsd_rag_tts_voice',        sanitize_text_field($_POST['mfsd_rag_tts_voice'] ?? ''));
         update_option('mfsd_rag_conversation_mode',in_array($_POST['mfsd_rag_conversation_mode']??'',['polite','normal']) ? $_POST['mfsd_rag_conversation_mode'] : 'polite');
         $reveal=$_POST['mfsd_rag_text_reveal']??'block'; update_option('mfsd_rag_text_reveal',in_array($reveal,['block','sentence','word'])?$reveal:'block');
@@ -775,11 +838,25 @@ final class MFSD_Weekly_RAG {
             <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'settings'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='settings'?'nav-tab-active':'';?>">⚙️ Settings</a>
             <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'questions','qtype'=>'RAG'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='questions'?'nav-tab-active':'';?>">📋 Questions</a>
             <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'reset'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='reset'?'nav-tab-active':'';?>">🔄 Student Reset</a>
+            <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'course-management'],admin_url('admin.php')));?>" class="nav-tab <?php echo $active_tab==='course-management'?'nav-tab-active':'';?>">📋 Course Management</a>
         </nav>
         <?php if($active_tab==='settings'):?>
         <form method="post" action=""><?php wp_nonce_field('mfsd_rag_admin_save','mfsd_rag_admin_nonce');?>
             <h2 class="title">📋 Summary Settings</h2>
-            <table class="form-table"><tr><th>Summary Caching</th><td><label><input type="checkbox" name="mfsd_rag_cache_summaries" value="1" <?php checked($cache_on);?>> <strong>Save &amp; reuse AI summaries</strong></label><p class="description">Checked = save and reuse. Unchecked = regenerate each time.</p></td></tr></table>
+            <table class="form-table">
+                <tr><th>Summary Caching</th><td><label><input type="checkbox" name="mfsd_rag_cache_summaries" value="1" <?php checked($cache_on);?>> <strong>Save &amp; reuse AI summaries</strong></label><p class="description">Checked = save and reuse. Unchecked = regenerate each time.</p></td></tr>
+                <tr>
+                    <th>Course Management</th>
+                    <td>
+                        <label><input type="checkbox" name="mfsd_rag_course_management" value="1" <?php checked(get_option('mfsd_rag_course_management','1'),'1');?>> <strong>Enable course ordering &amp; completion tracking</strong></label>
+                        <p class="description">
+                            <strong>When checked:</strong> Task locking, in-progress and completion states are tracked via MFSD Course Manager. Task slugs are <code>rag_week_1</code>, <code>rag_week_2</code>, <code>rag_week_3</code> matching the week in the page title.<br>
+                            <strong>When unchecked:</strong> Ordering logic is bypassed entirely — useful for testing without affecting student progress records.
+                            <?php if (!function_exists('mfsd_get_task_status')): ?><br><span style="color:#d63638;">⚠️ MFSD Ordering Utility plugin is not active.</span><?php endif; ?>
+                        </p>
+                    </td>
+                </tr>
+            </table>
             <h2 class="title">🎙 Voice Settings</h2>
             <table class="form-table"><tr><th><label for="mfsd_rag_tts_voice">Preferred TTS Voice</label></th><td>
                 <input type="text" id="mfsd_rag_tts_voice" name="mfsd_rag_tts_voice" value="<?php echo esc_attr($tts_voice);?>" class="regular-text" placeholder="e.g. Google UK English Female">
@@ -859,6 +936,123 @@ final class MFSD_Weekly_RAG {
             </table>
             <div style="margin-top:16px;display:flex;gap:10px;align-items:center;"><button type="button" id="mfsd-reset-btn" class="button button-secondary" style="border-color:#d63638;color:#d63638;">🗑 Reset Week</button><span id="mfsd-reset-status" style="font-size:14px;"></span></div>
         </div>
+        <?php elseif($active_tab==='course-management'):?>
+        <h2>📋 Course Management</h2>
+
+        <?php if (!function_exists('mfsd_get_task_status')): ?>
+        <div style="background:#fff8e5;border:1px solid #f0c036;border-left:4px solid #f0c036;padding:12px 16px;border-radius:4px;margin-bottom:16px;font-size:13px;">
+            ⚠️ <strong>MFSD Ordering Utility plugin is not active.</strong> Course management features will not function until it is activated.
+        </div>
+        <?php endif; ?>
+
+        <p>The Course Management toggle is in the <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'settings'],admin_url('admin.php')));?>">Settings tab</a> under Summary Settings.</p>
+
+        <h3>Student Ordering Status</h3>
+        <p style="color:#666;font-size:13px;">Shows all students who have an ordering progress record for any RAG week.</p>
+        <?php
+        $cm_rows = [];
+        if (function_exists('mfsd_get_task_order_row')) {
+            $cm_rows = $wpdb->get_results(
+                "SELECT p.student_id, p.task_slug, p.status, p.started_date, p.completed_date,
+                        u.display_name
+                 FROM   {$wpdb->prefix}mfsd_task_progress p
+                 JOIN   {$wpdb->users} u ON u.ID = p.student_id
+                 WHERE  p.task_slug LIKE 'rag_week_%'
+                 ORDER  BY u.display_name ASC, p.task_slug ASC",
+                ARRAY_A
+            );
+        }
+        ?>
+        <?php if (empty($cm_rows)): ?>
+            <p style="color:#999;">No students have ordering progress records for RAG weeks yet.</p>
+        <?php else: ?>
+        <table class="widefat striped" style="max-width:760px;margin-bottom:24px;">
+            <thead><tr>
+                <th>Student</th>
+                <th>Task</th>
+                <th>Ordering Status</th>
+                <th>Started</th>
+                <th>Completed</th>
+            </tr></thead>
+            <tbody>
+            <?php foreach ($cm_rows as $r):
+                $badge_colour = $r['status']==='completed' ? '#d1fae5;color:#065f46'
+                              : ($r['status']==='in_progress' ? '#fff3cd;color:#92400e' : '#f3f4f6;color:#6b7280');
+            ?>
+            <tr>
+                <td><strong><?php echo esc_html($r['display_name']); ?></strong></td>
+                <td><code><?php echo esc_html($r['task_slug']); ?></code></td>
+                <td><span style="display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase;background:<?php echo $badge_colour; ?>"><?php echo esc_html($r['status']); ?></span></td>
+                <td style="font-size:12px;color:#666;"><?php echo $r['started_date'] ? esc_html(substr($r['started_date'],0,10)) : '—'; ?></td>
+                <td style="font-size:12px;color:#666;"><?php echo $r['completed_date'] ? esc_html(substr($r['completed_date'],0,10)) : '—'; ?></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+
+        <h3>Reset Student Ordering Progress</h3>
+        <p style="color:#666;font-size:13px;">Resets a student's ordering progress for a specific RAG week back to <em>not started</em>. RAG answer data is managed in the <a href="<?php echo esc_url(add_query_arg(['page'=>'mfsd-rag','tab'=>'reset'],admin_url('admin.php')));?>">Student Reset tab</a>.</p>
+
+        <?php $all_students = get_users(['orderby'=>'display_name','order'=>'ASC','number'=>500]); ?>
+        <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px;max-width:540px;">
+            <table class="form-table" style="margin:0;">
+                <tr>
+                    <th style="padding:8px 0;"><label for="cm-reset-user">Student</label></th>
+                    <td style="padding:8px 0;">
+                        <select id="cm-reset-user" style="width:100%;max-width:320px;padding:6px;">
+                            <option value="">— select a student —</option>
+                            <?php foreach ($all_students as $u): ?>
+                                <option value="<?php echo esc_attr($u->ID); ?>"><?php echo esc_html($u->display_name); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th style="padding:8px 0;"><label for="cm-reset-week">RAG Week</label></th>
+                    <td style="padding:8px 0;">
+                        <select id="cm-reset-week" style="width:140px;padding:6px;">
+                            <?php for ($w=1;$w<=6;$w++): ?>
+                                <option value="<?php echo $w; ?>">Week <?php echo $w; ?> RAG</option>
+                            <?php endfor; ?>
+                        </select>
+                    </td>
+                </tr>
+            </table>
+            <div style="margin-top:16px;display:flex;gap:10px;align-items:center;">
+                <button type="button" id="cm-ordering-reset-btn" class="button button-secondary" style="border-color:#d63638;color:#d63638;">↺ Reset Ordering Progress</button>
+                <span id="cm-reset-status" style="font-size:14px;"></span>
+            </div>
+        </div>
+
+        <script>
+        (function(){
+            const btn = document.getElementById('cm-ordering-reset-btn');
+            if (!btn) return;
+            btn.addEventListener('click', async function() {
+                const uid  = document.getElementById('cm-reset-user').value;
+                const week = document.getElementById('cm-reset-week').value;
+                const st   = document.getElementById('cm-reset-status');
+                if (!uid) { st.textContent = '⚠ Please select a student.'; st.style.color = '#d63638'; return; }
+                const slug = 'rag_week_' + week;
+                const name = document.getElementById('cm-reset-user').options[document.getElementById('cm-reset-user').selectedIndex].textContent;
+                if (!confirm('Reset ordering progress for ' + slug + ' for ' + name + '?\n\nThis only removes the ordering record — RAG answer data is unaffected.')) return;
+                btn.disabled = true; st.textContent = 'Resetting…'; st.style.color = '#666';
+                try {
+                    const r = await fetch('<?php echo esc_url_raw(rest_url('mfsd/v1/admin-reset-cm-progress')); ?>', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>' },
+                        body: JSON.stringify({ user_id: parseInt(uid), task_slug: slug })
+                    });
+                    const d = await r.json();
+                    if (d.ok) { st.textContent = '✔ ' + d.message; st.style.color = 'green'; }
+                    else      { st.textContent = '✘ ' + (d.error || 'Unknown error'); st.style.color = '#d63638'; }
+                } catch(e) { st.textContent = '✘ ' + e.message; st.style.color = '#d63638'; }
+                finally { btn.disabled = false; }
+            });
+        })();
+        </script>
+
         <?php endif;?>
         </div>
         <script>
