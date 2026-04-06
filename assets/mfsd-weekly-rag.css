@@ -1,196 +1,376 @@
-.rag-wrap { 
-  max-width: 900px; 
-  margin: 0 auto; 
-  padding: 16px; 
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
+@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700&family=Nunito:wght@400;600&display=swap');
+
+/* ============================================================================
+   CSS CUSTOM PROPERTIES — Gamer Theme (student only)
+   ============================================================================ */
+.rag-wrap {
+  --bg-page:        #0A0E1A;
+  --bg-card:        #0F1628;
+  --bg-inner:       #0A0E1A;
+  --accent:         #00D4FF;
+  --accent-hover:   #33DDFF;
+  --accent-2:       #9333EA;
+  --accent-2-hover: #7C3AED;
+  --accent-3:       #FFD000;
+  --text:           #E8EAF0;
+  --text-light:     #F5F5F5;
+  --text-muted:     #888888;
+  --border:         rgba(0, 212, 255, 0.38);
+  --border-dim:     rgba(0, 212, 255, 0.15);
+  --rule:           rgba(221, 221, 221, 0.12);
+  --glow-cyan:      0 0 12px rgba(0, 212, 255, 0.2);
+  --glow-cyan-md:   0 0 8px rgba(0, 212, 255, 0.25);
+  --glow-purple:    0 0 12px rgba(147, 51, 234, 0.4);
+  --font-heading:   'Exo 2', sans-serif;
+  --font-body:      'Nunito', sans-serif;
+
+  /* Semantic RAG colours — keep their meaning */
+  --rag-red:        #d9534f;
+  --rag-amber:      #f0ad4e;
+  --rag-green:      #5cb85c;
 }
 
-.rag-card { 
-  border: 1px solid #e5e5e5; 
-  border-radius: 14px; 
-  padding: 18px; 
-  box-shadow: 0 2px 6px rgba(0,0,0,.04); 
+/* ============================================================================
+   LAYOUT
+   ============================================================================ */
+.rag-wrap {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+  font-family: var(--font-body);
+  background: var(--bg-page);
+  color: var(--text);
+  border-radius: 12px;
 }
 
-.rag-title { 
-  margin: 0 0 10px; 
-  font-size: 22px; 
+/* ============================================================================
+   CARD
+   ============================================================================ */
+.rag-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: var(--glow-cyan);
+  margin-bottom: 12px;
 }
 
-.rag-sub { 
-  color: #555; 
-  white-space: pre-line; 
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+.rag-title {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--accent-3);
+  margin: 0 0 12px;
+  letter-spacing: 0.02em;
 }
 
-.rag-qtext { 
-  font-size: 18px; 
-  margin: 6px 0 14px; 
-  font-weight: 500;
-}
-
-.rag-pos { 
-  color: #666; 
-  margin-bottom: 6px; 
+.rag-sub {
+  color: var(--text-muted);
   font-size: 14px;
+  white-space: pre-line;
+  line-height: 1.6;
 }
 
-.rag-lights { 
-  display: flex; 
-  gap: 10px; 
-  margin: 12px 0; 
-}
-
-.rag-light { 
-  border-radius: 30px; 
-  padding: 10px 16px; 
-  border: 0; 
-  color: #fff; 
-  cursor: pointer; 
+.rag-qtext {
+  font-family: var(--font-heading);
+  font-size: 18px;
   font-weight: 600;
+  color: var(--text-light);
+  margin: 6px 0 14px;
+  line-height: 1.4;
+}
+
+.rag-pos {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+/* ============================================================================
+   RAG TRAFFIC LIGHTS
+   ============================================================================ */
+.rag-lights {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0;
+  flex-wrap: wrap;
+}
+
+.rag-light {
+  border-radius: 10px;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  color: var(--text-light);
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 13px;
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .rag-light:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-.rag-light.red { 
-  background: #d9534f; 
-}
+.rag-light.red    { background: var(--rag-red); }
+.rag-light.amber  { background: var(--rag-amber); }
+.rag-light.green  { background: var(--rag-green); }
+.rag-light.neutral{ background: #555566; }
 
-.rag-light.amber { 
-  background: #f0ad4e; 
-}
-
-.rag-light.green { 
-  background: #5cb85c; 
-}
-
-.rag-actions { 
-  margin-top: 12px; 
-  display: flex; 
-  gap: 10px; 
-}
-
-.rag-btn { 
-  border: 1px solid #111; 
-  background: #111; 
-  color: #fff; 
-  border-radius: 10px; 
-  padding: 8px 14px; 
+/* ============================================================================
+   BUTTONS
+   ============================================================================ */
+.rag-btn {
+  background: var(--accent-2);
+  border: 1px solid var(--accent-2);
+  color: var(--text-light);
+  border-radius: 10px;
+  padding: 9px 18px;
   cursor: pointer;
+  font-family: var(--font-heading);
   font-size: 14px;
-  transition: background 0.2s;
+  font-weight: 700;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
 }
 
 .rag-btn:hover {
-  background: #333;
+  background: var(--accent-2-hover);
+  box-shadow: var(--glow-purple);
+  transform: translateY(-2px);
 }
 
-.rag-btn.secondary { 
-  background: #f5f5f5; 
-  color: #222; 
-  border-color: #ddd; 
-}
-
-.rag-btn.secondary:hover {
-  background: #e0e0e0;
+.rag-btn:active {
+  transform: scale(0.97) translateY(0);
 }
 
 .rag-btn:disabled {
-  opacity: 0.5;
+  background: #1E2440;
+  border-color: #333455;
+  color: #555566;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
-.rag-stats { 
-  display: flex; 
-  gap: 12px; 
+/* Secondary — cyan outline */
+.rag-btn.secondary {
+  background: transparent;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+}
+
+.rag-btn.secondary:hover {
+  background: rgba(0, 212, 255, 0.08);
+  box-shadow: var(--glow-cyan-md);
+  transform: translateY(-2px);
+}
+
+/* ============================================================================
+   ACTIONS ROW
+   ============================================================================ */
+.rag-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}
+
+/* ============================================================================
+   STATS & MBTI
+   ============================================================================ */
+.rag-stats {
+  display: flex;
+  gap: 10px;
   margin: 10px 0 12px;
   flex-wrap: wrap;
 }
 
-.stat { 
-  background: #f7f7f7; 
-  border: 1px solid #eee; 
-  border-radius: 8px; 
-  padding: 8px 10px;
-  font-size: 14px;
-  font-weight: 500;
+.stat {
+  background: var(--bg-inner);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
 }
 
-.rag-mbti { 
-  font-weight: 700; 
+.rag-mbti {
+  font-family: var(--font-heading);
+  font-weight: 700;
   margin: 12px 0;
   font-size: 18px;
-  color: #2c3e50;
+  color: var(--accent-3);
 }
 
-.rag-ai { 
-  background: #f9fafc; 
-  border: 1px dashed #cbd5e1; 
-  padding: 14px; 
-  border-radius: 8px; 
+/* ============================================================================
+   AI TEXT BOXES
+   ============================================================================ */
+
+/* Summary AI box */
+.rag-ai {
+  background: var(--bg-inner);
+  border: 1px solid var(--border-dim);
+  padding: 16px;
+  border-radius: 8px;
   white-space: pre-line;
-  line-height: 1.6;
+  line-height: 1.7;
   margin: 14px 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text);
 }
 
+/* Per-question SteveGPT guidance box */
 .rag-ai-question {
-  background: #fff8e6;
-  border: 1px solid #ffd966;
-  border-left: 4px solid #f0ad4e;
+  background: rgba(147, 51, 234, 0.1);
+  border: 1px solid rgba(147, 51, 234, 0.3);
+  border-left: 4px solid var(--accent-2);
   padding: 12px 14px;
   border-radius: 6px;
   line-height: 1.6;
   margin: 12px 0;
   font-size: 14px;
-  color: #333;
+  color: var(--text);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .rag-ai-question em {
-  color: #999;
+  color: var(--text-muted);
   font-style: italic;
 }
 
-.rag-prev { 
-  font-size: 14px; 
-  color: #555; 
+/* ============================================================================
+   PREVIOUS ANSWER STRIP
+   ============================================================================ */
+.rag-prev {
+  font-size: 13px;
+  color: var(--text-muted);
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #f0f8ff;
+  background: rgba(0, 212, 255, 0.06);
   border-radius: 6px;
-  border-left: 3px solid #4a90e2;
+  border-left: 3px solid var(--accent);
 }
 
+/* ============================================================================
+   ERROR / INFO MESSAGES
+   ============================================================================ */
 .rag-error-msg {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
-  border-left: 4px solid #ff9800;
+  background: rgba(217, 83, 79, 0.12);
+  border: 1px solid rgba(217, 83, 79, 0.4);
+  border-left: 4px solid var(--rag-red);
   padding: 16px;
   border-radius: 8px;
-  color: #856404;
-  font-size: 16px;
+  color: #ffaaaa;
+  font-size: 15px;
   margin: 16px 0;
   line-height: 1.6;
 }
 
-.rag-chatwrap { 
+/* ============================================================================
+   CHAT WRAPPER
+   ============================================================================ */
+.rag-chatwrap {
   margin: 14px 0;
-  padding: 12px;
-  background: #fafafa;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  padding: 14px;
+  background: var(--bg-inner);
+  border-radius: 10px;
+  border: 1px solid var(--border-dim);
 }
 
-/* Loading overlay */
+/* Chat history */
+.rag-chat-history {
+  max-height: 420px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding: 10px;
+  background: var(--bg-card);
+  border-radius: 8px;
+  border: 1px solid var(--border-dim);
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar */
+.rag-chat-history::-webkit-scrollbar { width: 5px; }
+.rag-chat-history::-webkit-scrollbar-track { background: var(--bg-inner); border-radius: 3px; }
+.rag-chat-history::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Chat messages */
+.rag-chat-msg {
+  margin-bottom: 10px;
+  padding: 9px 13px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.55;
+  font-family: var(--font-body);
+}
+
+.rag-chat-msg.ai-msg {
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid var(--border-dim);
+  border-left: 3px solid var(--accent);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rag-chat-msg.user-msg {
+  background: rgba(147, 51, 234, 0.1);
+  border: 1px solid rgba(147, 51, 234, 0.25);
+  border-left: 3px solid var(--accent-2);
+  color: var(--text);
+}
+
+.rag-chat-msg.error-msg {
+  background: rgba(217, 83, 79, 0.1);
+  border: 1px solid rgba(217, 83, 79, 0.3);
+  border-left: 3px solid var(--rag-red);
+  color: #ffaaaa;
+  font-size: 13px;
+}
+
+/* Chat textarea */
+.rag-chatwrap textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 10px 12px;
+  resize: none;
+  line-height: 1.4;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.rag-chatwrap textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--glow-cyan-md);
+}
+
+.rag-chatwrap textarea::placeholder { color: var(--text-muted); }
+
+/* ============================================================================
+   LOADING OVERLAY
+   ============================================================================ */
 .rag-loading-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: rgba(10, 14, 26, 0.88);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -201,25 +381,30 @@
 .rag-spinner {
   width: 50px;
   height: 50px;
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #3498db;
+  border: 4px solid rgba(0, 212, 255, 0.15);
+  border-top: 4px solid var(--accent);
   border-radius: 50%;
-  animation: rag-spin 1s linear infinite;
+  animation: rag-spin 0.85s linear infinite;
+  box-shadow: var(--glow-cyan);
 }
 
 @keyframes rag-spin {
-  0% { transform: rotate(0deg); }
+  0%   { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 
 .rag-loading-text {
-  color: white;
-  font-size: 18px;
-  margin-top: 20px;
-  font-weight: 500;
+  font-family: var(--font-heading);
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 18px;
+  letter-spacing: 0.04em;
 }
 
-/* Pie chart */
+/* ============================================================================
+   CHART / SUMMARY
+   ============================================================================ */
 .rag-chart-container {
   display: flex;
   flex-direction: column;
@@ -228,28 +413,36 @@
 }
 
 .rag-week-chart-title {
-  margin: 10px 0;
+  font-family: var(--font-heading);
   font-size: 18px;
-  color: #333;
+  font-weight: 700;
+  color: var(--accent-3);
+  margin: 10px 0;
 }
 
 .rag-mbti-week {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 15px;
   margin: 10px 0;
-  font-weight: 600;
-  color: #2c3e50;
+  color: var(--accent);
 }
 
+/* Pie chart canvas border */
 #rag-pie-chart {
   display: block;
   max-width: 100%;
   height: auto;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   padding: 10px;
-  background: white;
+  background: var(--bg-card);
+  box-shadow: var(--glow-cyan);
 }
 
-/* Week tabs */
+/* ============================================================================
+   WEEK TABS
+   ============================================================================ */
 .rag-week-tabs {
   display: flex;
   gap: 8px;
@@ -259,30 +452,35 @@
 }
 
 .rag-week-tab {
-  padding: 10px 20px;
-  border: 2px solid #ddd;
-  background: #f8f8f8;
+  padding: 9px 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-inner);
   border-radius: 8px;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: all 0.2s;
 }
 
 .rag-week-tab:hover {
-  background: #e8e8e8;
-  border-color: #ccc;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--glow-cyan-md);
 }
 
 .rag-week-tab.active {
-  background: #4a90e2;
-  color: white;
-  border-color: #4a90e2;
-}/* ============================================================================
-   DISC INTEGRATION CSS ADDITIONS
-   Add these styles to your mfsd-weekly-rag.css file
-   ============================================================================ */
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--glow-cyan-md);
+}
 
-/* DISC 5-point scale container */
+/* ============================================================================
+   DISC — 5-POINT SCALE
+   ============================================================================ */
 .disc-scale-container {
   margin: 20px 0;
 }
@@ -290,15 +488,15 @@
 .disc-scale-label {
   text-align: center;
   margin-bottom: 12px;
+  font-family: var(--font-heading);
   font-weight: 600;
-  color: #555;
-  font-size: 16px;
+  font-size: 15px;
+  color: var(--text-light);
 }
 
-/* DISC scale buttons - enhance existing .rag-light for DISC */
 .disc-scale-btn {
   min-width: 90px;
-  padding: 16px 12px;
+  padding: 14px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -306,220 +504,146 @@
   white-space: normal;
   text-align: center;
   transition: all 0.2s ease;
+  border-radius: 10px;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-light);
+  border: none;
+  cursor: pointer;
 }
 
 .disc-scale-btn:hover {
   transform: translateY(-3px) scale(1.05);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4) !important;
 }
 
 .disc-scale-btn:active {
   transform: translateY(-1px) scale(1.02);
 }
 
-/* Neutral color for middle option */
-.rag-light.neutral {
-  background: #9e9e9e;
-}
-
-/* DISC Results Section */
-.disc-style-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 16px;
-  border-radius: 10px;
-  margin: 12px 0;
-}
-
-.disc-style-header h4 {
-  margin: 0 0 8px 0;
-  font-size: 20px;
-}
-
-.disc-style-header p {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-/* Polar Plot Container */
-.disc-plot-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* ============================================================================
+   DISC RESULTS — polar plot / breakdown
+   ============================================================================ */
+.rag-disc-section {
   margin: 20px 0;
-  background: white;
   padding: 20px;
-  border-radius: 12px;
-  border: 1px solid #e5e5e5;
+  background: var(--bg-inner);
+  border-radius: 10px;
+  border: 1px solid var(--border-dim);
 }
 
-.disc-plot-container h4 {
-  margin: 0 0 16px 0;
-  color: #2c3e50;
-  font-size: 18px;
+.disc-content-wrapper {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
-.disc-plot-container p {
-  margin: 12px 0 0 0;
-  font-size: 13px;
-  color: #666;
-  text-align: center;
-  max-width: 360px;
-  line-height: 1.5;
-}
+.disc-plot-wrapper { flex: 0 0 auto; }
 
-#disc-polar-plot {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  border-radius: 8px;
-}
-
-/* DISC Score Breakdown */
 .disc-breakdown {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin: 16px 0;
-}
-
-.disc-bar {
-  background: linear-gradient(to top, #4a90e2, #357abd);
-  border-radius: 8px;
-  padding: 12px 8px;
-  color: white;
-  text-align: center;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  min-height: 120px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  gap: 8px;
+  min-width: 120px;
 }
 
-.disc-bar div:first-child {
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.disc-bar div:nth-child(2) {
-  font-size: 24px;
-  font-weight: bold;
-  margin: 8px 0;
-}
-
-.disc-bar div:last-child {
-  font-size: 11px;
-  opacity: 0.9;
-}
-
-/* DISC Insights Section */
-.disc-insights {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
-  margin: 16px 0;
-}
-
-.disc-insights > div {
-  margin-bottom: 12px;
-  line-height: 1.6;
-}
-
-.disc-insights > div:last-child {
-  margin-bottom: 0;
-  background: #fff3cd;
-  padding: 12px;
-  border-radius: 6px;
-  border-left: 4px solid #f0ad4e;
-}
-
-.disc-insights strong {
-  color: #2c3e50;
-}
-
-/* Mobile Responsiveness */
-@media (max-width: 768px) {
-  .disc-breakdown {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  
-  .disc-scale-btn {
-    min-width: 70px;
-    padding: 12px 8px;
-    font-size: 11px;
-  }
-  
-  .disc-plot-container {
-    padding: 12px;
-  }
-  
-  #disc-polar-plot {
-    max-width: 320px;
-  }
-}
-
-@media (max-width: 480px) {
-  .rag-lights {
-    flex-direction: column;
-  }
-  
-  .disc-scale-btn {
-    width: 100%;
-    max-width: none;
-  }
-  
-  .disc-breakdown {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  
-  .disc-bar {
-    min-height: 80px;
-  }
-}
-
-/* Ensure DISC card has proper spacing */
-.rag-card .disc-plot-container {
-  margin-top: 20px;
-}
-
-/* Loading state for polar plot */
-.disc-plot-loading {
+.disc-score-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 400px;
-  color: #999;
-  font-style: italic;
+  gap: 8px;
 }
 
-/* Print styles for DISC results */
-@media print {
-  .disc-plot-container {
-    page-break-inside: avoid;
-  }
-  
-  .disc-breakdown {
-    page-break-inside: avoid;
-  }
-  
-  #disc-polar-plot {
-    max-width: 300px;
-  }
+.disc-color-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.disc-label-pct {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-light);
+}
+
+/* DISC title in summary */
+.rag-disc-section > div:first-child {
+  font-family: var(--font-heading) !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: var(--accent-3) !important;
+  text-align: center;
+  margin-bottom: 16px;
 }
 
 /* ============================================================================
-   MFSD MICROPHONE / SPEECH-TO-TEXT BUTTON
+   TTS CONTROLS
    ============================================================================ */
+.mfsd-tts-controls {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
 
+.mfsd-tts-btn {
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+
+.mfsd-tts-btn:hover {
+  background: rgba(0, 212, 255, 0.18);
+  box-shadow: var(--glow-cyan-md);
+}
+
+.mfsd-tts-speak { color: var(--accent); }
+.mfsd-tts-stop  { color: var(--rag-red); }
+
+/* TTS bar above summary */
+.mfsd-tts-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 212, 255, 0.06);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px 8px 0 0;
+  padding: 7px 14px;
+  margin-bottom: 0;
+}
+
+.mfsd-tts-summary-bar span {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ============================================================================
+   MICROPHONE BUTTON
+   ============================================================================ */
 .mfsd-mic-btn {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 2px solid #ddd;
-  background: #f8f9fa;
+  border: 2px solid var(--border);
+  background: var(--bg-card);
   font-size: 18px;
   cursor: pointer;
   display: inline-flex;
@@ -531,96 +655,358 @@
 }
 
 .mfsd-mic-btn:hover {
-  background: #e3f2fd;
-  border-color: #2196f3;
+  background: rgba(0, 212, 255, 0.1);
+  border-color: var(--accent);
+  box-shadow: var(--glow-cyan-md);
   transform: scale(1.08);
 }
 
-/* Pulsing red ring when actively listening */
 .mfsd-mic-btn.mfsd-mic-active {
-  border-color: #f44336;
-  background: #fff5f5;
+  border-color: var(--rag-red);
+  background: rgba(217, 83, 79, 0.12);
   animation: mfsd-mic-pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes mfsd-mic-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.5); }
-  70%  { box-shadow: 0 0 0 8px rgba(244, 67, 54, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(217, 83, 79, 0.5); }
+  70%  { box-shadow: 0 0 0 8px rgba(217, 83, 79, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 83, 79, 0); }
 }
 
-/* Slightly dim the text input while listening */
 input.mfsd-listening {
-  background: #fff8f8;
-  border-color: #f44336 !important;
-  color: #c62828;
+  border-color: var(--rag-red) !important;
+  background: rgba(217, 83, 79, 0.06);
 }
+
+/* ============================================================================
+   RED FOLLOW-UP — Red answer badge
    ============================================================================ */
-
-.mfsd-tts-controls {
-  display: inline-flex;
-  gap: 4px;
-  margin-left: 8px;
-  vertical-align: middle;
-}
-
-.mfsd-tts-btn {
-  background: none;
-  border: 1px solid #ccc;
-  border-radius: 50%;
-  width: 26px;
-  height: 26px;
-  font-size: 13px;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
+.rag-red-badge {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  transition: background 0.15s, border-color 0.15s;
+  gap: 6px;
+  background: rgba(217, 83, 79, 0.15);
+  color: #ffaaaa;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(217, 83, 79, 0.35);
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.mfsd-tts-btn:hover {
-  background: #e8f4fd;
-  border-color: #2196f3;
+/* Previous plan box */
+.rag-prev-plan-box {
+  background: rgba(240, 173, 78, 0.08);
+  border: 1px solid rgba(240, 173, 78, 0.3);
+  border-left: 3px solid var(--rag-amber);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
 }
 
-.mfsd-tts-speak { color: #1976d2; }
-.mfsd-tts-stop  { color: #d32f2f; }
+.rag-prev-plan-box .plan-label {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--rag-amber);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
-/* TTS bar above summary */
-.mfsd-tts-summary-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #f0f8ff;
-  border: 1px solid #d0e8ff;
-  border-radius: 6px 6px 0 0;
-  padding: 6px 12px;
+.rag-prev-plan-box .plan-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* SteveGPT suggestion box */
+.rag-stevegpt-box {
+  background: rgba(0, 212, 255, 0.06);
+  border: 1px solid var(--border-dim);
+  padding: 16px;
+  border-radius: 10px;
   margin-bottom: 0;
 }
 
-/* Make guidance box flex so button sits neatly */
-.rag-ai-question {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  flex-wrap: wrap;
+.rag-stevegpt-label {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
 }
 
-/* AI chat messages - allow button to sit inline */
-.rag-chat-msg.ai-msg {
+/* Suggestion items */
+.rag-suggestion-item {
   display: flex;
+  gap: 8px;
   align-items: flex-start;
-  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-dim);
+  margin-bottom: 6px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.rag-suggestion-item:hover {
+  border-color: var(--accent);
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.rag-suggestion-num {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.rag-suggestion-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.rag-suggestion-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+/* ============================================================================
+   RED PLAN — TEXTAREA & PROGRESS
+   ============================================================================ */
+.rag-plan-title {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-light);
+}
+
+.rag-plan-word-count {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  line-height: 1.5;
+}
+
+.rag-plan-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.rag-plan-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--glow-cyan-md);
+}
+
+.rag-plan-textarea::placeholder { color: var(--text-muted); }
+
+/* Progress bar track */
+.rag-progress-track {
+  height: 5px;
+  background: rgba(0, 212, 255, 0.12);
+  border-radius: 3px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+/* Progress bar fill — width set via JS */
+.rag-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.2s, background 0.2s;
+}
+
+/* Plan note / helper text */
+.rag-plan-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(0, 212, 255, 0.04);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-dim);
+}
+
+/* Section divider */
+.rag-section-hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 18px 0;
+}
+
+/* ============================================================================
+   INTRO SCREEN — previous week summary box
+   ============================================================================ */
+.rag-prev-week-box {
+  background: rgba(0, 212, 255, 0.06);
+  border-left: 4px solid var(--accent);
+  padding: 12px 14px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+.rag-prev-week-box .pw-title {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--accent);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rag-prev-week-box .pw-stats {
+  display: flex;
+  gap: 10px;
   flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+/* Intro message box */
+.rag-intro-msg {
+  background: rgba(147, 51, 234, 0.1);
+  border: 1px solid rgba(147, 51, 234, 0.3);
+  border-left: 4px solid var(--accent-2);
+  padding: 12px 14px;
+  border-radius: 6px;
+  line-height: 1.6;
+  margin: 12px 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* ============================================================================
+   INLINE STYLE OVERRIDES
+   These neutralise hardcoded inline styles injected by the JS
+   ============================================================================ */
+
+/* Previous-week stat chips from api_status */
+.rag-card > div[style*="d4edda"],
+.rag-card > div[style*="fff3cd"],
+.rag-card > div[style*="f8d7da"],
+.rag-card > div[style*="e8f4fd"] {
+  background: var(--bg-inner) !important;
+  border-color: var(--border-dim) !important;
+  color: var(--text) !important;
+}
+
+/* Intro SteveGPT / intro-message box */
+.rag-card > div[style*="fff8e6"],
+.rag-card > div[style*="ffd966"] {
+  background: rgba(147, 51, 234, 0.1) !important;
+  border-color: rgba(147, 51, 234, 0.3) !important;
+  border-left-color: var(--accent-2) !important;
+  color: var(--text) !important;
+}
+
+/* DISC section injected from JS */
+.rag-card > div[style*="f8f9fa"] {
+  background: var(--bg-inner) !important;
+  border-color: var(--border-dim) !important;
+}
+
+/* Red follow-up: inline card styles */
+.rag-card > div[style*="fff8e6"] .plan-label { color: var(--rag-amber) !important; }
+.rag-card > div[style*="E6F1FB"],
+.rag-card [style*="E6F1FB"] {
+  background: rgba(0, 212, 255, 0.06) !important;
+  border-color: var(--border-dim) !important;
+}
+
+/* Red-answered badge background in follow-up header */
+.rag-card [style*="FCEBEB"] {
+  background: rgba(217, 83, 79, 0.15) !important;
+  border-color: rgba(217, 83, 79, 0.35) !important;
+  color: #ffaaaa !important;
+}
+
+/* SteveGPT label colour in follow-up */
+.rag-card [style*="185FA5"] {
+  color: var(--accent) !important;
+}
+
+/* Plan section heading text */
+.rag-card [style*="1d2327"] {
+  color: var(--text-light) !important;
+}
+
+/* Plan word count label */
+.rag-card [style*="378ADD"] {
+  color: var(--accent) !important;
+}
+
+/* "Some ideas" label */
+.rag-card [style*="uppercase"][style*="letter-spacing"] {
+  color: var(--text-muted) !important;
+}
+
+/* Plan note helper box */
+.rag-card [style*="f8f8f8"] {
+  background: rgba(0, 212, 255, 0.04) !important;
+  border-color: var(--border-dim) !important;
+  color: var(--text-muted) !important;
+}
+
+/* Chat section "Ask SteveGPT for more ideas" label */
+.rag-chatwrap > div[style*="uppercase"] {
+  color: var(--text-muted) !important;
+}
+
+/* Inline red follow-up chat history background */
+.rag-chat-history[style] {
+  background: var(--bg-card) !important;
+}
+
+/* ============================================================================
+   RESPONSIVE
+   ============================================================================ */
+@media (max-width: 768px) {
+  .disc-scale-btn      { min-width: 68px; padding: 10px 6px; font-size: 11px; }
+  .disc-content-wrapper{ flex-direction: column; }
 }
 
 @media (max-width: 480px) {
+  .rag-lights          { flex-direction: column; }
+  .disc-scale-btn      { width: 100%; max-width: none; }
+  .rag-week-tabs       { gap: 4px; }
+  .rag-week-tab        { padding: 7px 12px; font-size: 12px; }
+
   .mfsd-tts-summary-bar {
     flex-direction: column;
     align-items: flex-start;
     gap: 6px;
   }
+}
+
+/* ============================================================================
+   PRINT
+   ============================================================================ */
+@media print {
+  .disc-plot-container, .disc-breakdown { page-break-inside: avoid; }
+  #disc-polar-plot { max-width: 300px; }
 }
