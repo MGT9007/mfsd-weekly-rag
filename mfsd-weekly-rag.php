@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 7.1.0
+ * Version: 7.2.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '7.1.0';
+    const VERSION = '7.2.0';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS      = 'mfsd_rag_questions';
@@ -35,6 +35,7 @@ final class MFSD_Weekly_RAG {
         add_action('admin_init',    array($this, 'maybe_upgrade_db'));
         add_action('admin_init',    array($this, 'save_admin_settings'));
         add_action('admin_init',    array($this, 'handle_question_actions'));
+        add_filter('stevegpt_plugin_integration_slots', array($this, 'register_stevegpt_slots'));
     }
 
     // =========================================================================
@@ -246,7 +247,8 @@ final class MFSD_Weekly_RAG {
         ));
         wp_enqueue_script('mfsd-weekly-rag');
         wp_enqueue_style('mfsd-weekly-rag');
-        $chat_html = do_shortcode('[mwai_chatbot id="chatbot-vxk8pu"]');
+        $chatbot_id = get_option('mfsd_stevegpt_map_rag_chat', '');
+        $chat_html  = $chatbot_id ? do_shortcode('[stevegpt_chatbot id="' . esc_attr($chatbot_id) . '"]') : '';
         return '<div id="mfsd-rag-root"></div>'
              . '<div id="mfsd-rag-chat-source" style="display:none">' . $chat_html . '</div>';
     }
@@ -819,6 +821,16 @@ final class MFSD_Weekly_RAG {
             else $wpdb->update($q_table,$data,['id'=>(int)$_POST['question_id']],$fmt,['%d']);
             wp_redirect(add_query_arg('msg',$action==='add'?'added':'updated',$base)); exit;
         }
+    }
+
+    public function register_stevegpt_slots(array $slots): array {
+        $slots[] = [
+            'plugin' => 'Weekly RAG',
+            'role'   => 'RAG chat assistant',
+            'option' => 'mfsd_stevegpt_map_rag_chat',
+            'tokens' => [],
+        ];
+        return $slots;
     }
 
     public function admin_menu() {

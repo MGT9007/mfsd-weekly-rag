@@ -221,18 +221,18 @@
 
     if (status.previous_week_summary) {
       const ps = status.previous_week_summary;
-      const box = el("div"); box.style.cssText = "background:#f0f8ff;border-left:4px solid #4a90e2;padding:12px 14px;border-radius:6px;margin:12px 0;";
-      const title = el("div"); title.style.cssText = "font-weight:600;margin-bottom:6px;color:#2c3e50;"; title.textContent = "Last Week (Week " + ps.week + ") Results:"; box.appendChild(title);
-      const stats = el("div"); stats.style.cssText = "display:flex;gap:12px;margin:8px 0;flex-wrap:wrap;";
-      const gs = el("div","stat"); gs.style.cssText = "background:#d4edda;border:1px solid #c3e6cb;border-radius:6px;padding:6px 10px;font-size:14px;"; gs.textContent = "🟢 Greens: " + ps.greens; stats.appendChild(gs);
-      const as = el("div","stat"); as.style.cssText = "background:#fff3cd;border:1px solid #ffeaa7;border-radius:6px;padding:6px 10px;font-size:14px;"; as.textContent = "🟠 Ambers: " + ps.ambers; stats.appendChild(as);
-      const rs = el("div","stat"); rs.style.cssText = "background:#f8d7da;border:1px solid #f5c6cb;border-radius:6px;padding:6px 10px;font-size:14px;"; rs.textContent = "🔴 Reds: " + ps.reds; stats.appendChild(rs);
-      if (ps.mbti_type) { const ms = el("div","stat"); ms.style.cssText = "background:#e8f4fd;border:1px solid #b8daff;border-radius:6px;padding:6px 10px;font-size:14px;font-weight:600;"; ms.textContent = "MBTI: " + ps.mbti_type; stats.appendChild(ms); }
+      const box = el("div","rag-prev-week-box");
+      const title = el("div","pw-title"); title.textContent = "Last Week (Week " + ps.week + ") Results:"; box.appendChild(title);
+      const stats = el("div","pw-stats");
+      const gs = el("div","stat"); gs.textContent = "🟢 Greens: " + ps.greens; stats.appendChild(gs);
+      const as = el("div","stat"); as.textContent = "🟠 Ambers: " + ps.ambers; stats.appendChild(as);
+      const rs = el("div","stat"); rs.textContent = "🔴 Reds: " + ps.reds; stats.appendChild(rs);
+      if (ps.mbti_type) { const ms = el("div","stat"); ms.textContent = "MBTI: " + ps.mbti_type; stats.appendChild(ms); }
       box.appendChild(stats); card.appendChild(box);
     }
 
     if (status.intro_message) {
-      const ib = el("div"); ib.style.cssText = "background:#fff8e6;border:1px solid #ffd966;border-left:4px solid #f0ad4e;padding:12px 14px;border-radius:6px;line-height:1.6;margin:12px 0;font-size:14px;color:#333;"; ib.textContent = status.intro_message; card.appendChild(ib);
+      const ib = el("div","rag-intro-msg"); ib.textContent = status.intro_message; card.appendChild(ib);
     } else {
       card.appendChild(el("p","rag-sub","High Performance Pathway RAG + MBTI Weekly Tracker.\nGreens = strengths ; Ambers = mixed ; Reds = needs support.\n"));
     }
@@ -326,8 +326,7 @@
         const gd = await gr.json();
         if (gd.ok && gd.guidance) {
           aiGuidanceDiv.innerHTML = '';
-          const steveLabel = el("div");
-          steveLabel.style.cssText = "font-size:12px;font-weight:500;color:#856404;margin-bottom:6px;";
+          const steveLabel = el("div","rag-stevegpt-label");
           steveLabel.textContent = "SteveGPT";
           aiGuidanceDiv.appendChild(steveLabel);
           const guidanceText = document.createElement('span');
@@ -340,14 +339,14 @@
 
     // Chatbot
     const chatWrap = el("div","rag-chatwrap");
-    const chatHistory = el("div","rag-chat-history"); chatHistory.style.cssText = "max-height:420px;overflow-y:auto;margin-bottom:12px;padding:10px;background:#f5f5f5;border-radius:6px;scroll-behavior:smooth;";
-    const initMsg = el("div","rag-chat-msg ai-msg"); initMsg.style.cssText = "margin-bottom:10px;padding:8px 12px;background:#e3f2fd;border-radius:8px;border-left:3px solid #2196f3;";
+    const chatHistory = el("div","rag-chat-history");
+    const initMsg = el("div","rag-chat-msg ai-msg");
     const initText = "Hi! How can I help you with this question?"; initMsg.textContent = initText;
     if (mfsdTTS.supported) initMsg.appendChild(mfsdTTS.makeControls(initText));
     chatHistory.appendChild(initMsg); chatWrap.appendChild(chatHistory);
 
     const inputContainer = el("div"); inputContainer.style.cssText = "display:flex;gap:8px;align-items:flex-end;";
-    const chatInput = document.createElement("textarea"); chatInput.rows=2; chatInput.placeholder="Ask about this question..."; chatInput.style.cssText="flex:1;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;resize:none;font-family:inherit;line-height:1.4;";
+    const chatInput = document.createElement("textarea"); chatInput.rows=2; chatInput.placeholder="Ask about this question..."; chatInput.style.flex="1";
     const sendBtn = el("button","rag-btn","Send"); sendBtn.style.cssText="padding:10px 20px;white-space:nowrap;";
     let conversationMode = false;
 
@@ -357,7 +356,7 @@
       mfsdSTT.listen(
         (t)=>{chatInput.value=t;},
         (t)=>{chatInput.value=t;sendMessage();},
-        (msg)=>{chatInput.placeholder="Ask about this question...";const e=el("div","rag-chat-msg error-msg");e.style.cssText="margin-bottom:10px;padding:8px 12px;background:#ffebee;border-radius:8px;border-left:3px solid #f44336;font-size:13px;";e.textContent="🎤 "+msg;chatHistory.appendChild(e);chatHistory.scrollTop=chatHistory.scrollHeight;if(conversationMode)setTimeout(()=>startListening(),800);}
+        (msg)=>{chatInput.placeholder="Ask about this question...";const e=el("div","rag-chat-msg error-msg");e.textContent="🎤 "+msg;chatHistory.appendChild(e);chatHistory.scrollTop=chatHistory.scrollHeight;if(conversationMode)setTimeout(()=>startListening(),800);}
       );
     }
 
@@ -375,17 +374,17 @@
 
     const sendMessage = async () => {
       const userMsg=chatInput.value.trim(); if(!userMsg)return;
-      const ume=el("div","rag-chat-msg user-msg"); ume.style.cssText="margin-bottom:10px;padding:8px 12px;background:#fff;border-radius:8px;border-left:3px solid #666;text-align:left;"; ume.textContent=userMsg;
+      const ume=el("div","rag-chat-msg user-msg"); ume.textContent=userMsg;
       chatHistory.appendChild(ume); chatInput.value=""; chatInput.placeholder=conversationMode?"Waiting for AI reply…":"Ask about this question..."; sendBtn.disabled=true; sendBtn.textContent="Sending..."; chatHistory.scrollTop=chatHistory.scrollHeight;
       try {
         const resp=await fetch(cfg.restUrlQuestionChat,{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':cfg.nonce||''},credentials:'same-origin',body:JSON.stringify({week,question_id:q.id,message:userMsg})});
         if (resp.ok){const data=await resp.json();if(data.ok&&data.response){
-          const aie=el("div","rag-chat-msg ai-msg"); aie.style.cssText="margin-bottom:10px;padding:8px 12px;background:#e3f2fd;border-radius:8px;border-left:3px solid #2196f3;";
+          const aie=el("div","rag-chat-msg ai-msg");
           const ait=document.createElement('span'); aie.appendChild(ait); chatHistory.appendChild(aie); chatHistory.scrollTop=chatHistory.scrollHeight;
           if(mfsdTTS.supported){aie.appendChild(mfsdTTS.makeControls(data.response));if(mfsdTTS.enabled){if(convMode==='polite'){mfsdTTS.speakWithReveal(data.response,ait,()=>{if(conversationMode)startListening();});}else{mfsdTTS.speakWithReveal(data.response,ait);if(conversationMode)startListening();}}else{ait.textContent=data.response;if(conversationMode)setTimeout(()=>{if(conversationMode)startListening();},500);}}
           else{ait.textContent=data.response;if(conversationMode)setTimeout(()=>{if(conversationMode)startListening();},500);}
         }}else throw new Error('Failed');
-      } catch(err){const em=el("div","rag-chat-msg error-msg");em.style.cssText="margin-bottom:10px;padding:8px 12px;background:#ffebee;border-radius:8px;border-left:3px solid #f44336;";em.textContent="Sorry, couldn't process your message.";chatHistory.appendChild(em);if(conversationMode)setTimeout(()=>{if(conversationMode)startListening();},800);}
+      } catch(err){const em=el("div","rag-chat-msg error-msg");em.textContent="Sorry, couldn't process your message.";chatHistory.appendChild(em);if(conversationMode)setTimeout(()=>{if(conversationMode)startListening();},800);}
       finally{sendBtn.disabled=false;sendBtn.textContent="Send";if(!conversationMode)chatInput.focus();}
     };
 
@@ -450,19 +449,19 @@
       const cc=el("div","rag-chart-container"); cc.id="chart-display"; card.appendChild(cc);
 
       if (sd.disc_type&&sd.disc_scores){
-        const ds=el("div","rag-disc-section"); ds.style.cssText="margin:20px 0;padding:20px;background:#f8f9fa;border-radius:8px;";
-        const dt=el("div","rag-disc-title"); dt.style.cssText="font-size:18px;font-weight:600;margin-bottom:16px;text-align:center;"; dt.textContent="DISC Personality Style: "+sd.disc_type; ds.appendChild(dt);
+        const ds=el("div","rag-disc-section");
+        const dt=el("div","rag-disc-title"); dt.textContent="DISC Personality Style: "+sd.disc_type; ds.appendChild(dt);
         const dcw=el("div","disc-content-wrapper"); dcw.style.cssText="display:flex;gap:20px;align-items:center;flex-wrap:wrap;justify-content:center;";
         const pp=el("div","disc-plot-wrapper"); pp.style.cssText="flex:0 0 auto;"; const plt=createDISCPolarPlot(sd.disc_scores); if(plt)pp.appendChild(plt); dcw.appendChild(pp);
         const bd=el("div","disc-breakdown"); bd.style.cssText="display:flex;flex-direction:column;gap:8px;min-width:120px;";
         const dc={'D':'#2d5f8d','I':'#f9b234','S':'#c67a3c','C':'#3b5998'};
-        ['D','I','S','C'].forEach(l=>{const sc=sd.disc_scores[l];const row=el("div","disc-score-row");row.style.cssText="display:flex;align-items:center;gap:8px;";const cb=el("div","disc-color-box");cb.style.cssText=`width:20px;height:20px;background:${dc[l]};border-radius:3px;flex-shrink:0;`;const lp=el("div","disc-label-pct");lp.style.cssText="font-weight:600;font-size:14px;color:#333;";lp.textContent=`${l}: ${Math.round(sc.percent)}%`;row.appendChild(cb);row.appendChild(lp);bd.appendChild(row);});
+        ['D','I','S','C'].forEach(l=>{const sc=sd.disc_scores[l];const row=el("div","disc-score-row");const cb=el("div","disc-color-box");cb.style.cssText=`width:20px;height:20px;background:${dc[l]};border-radius:3px;flex-shrink:0;`;const lp=el("div","disc-label-pct");lp.textContent=`${l}: ${Math.round(sc.percent)}%`;row.appendChild(cb);row.appendChild(lp);bd.appendChild(row);});
         dcw.appendChild(bd); ds.appendChild(dcw); card.appendChild(ds);
       }
 
       if (sd.ai){
         const asd=el("div","rag-ai");
-        if(mfsdTTS.supported){const tb=document.createElement('div');tb.className='mfsd-tts-summary-bar';tb.innerHTML='<span style="font-size:13px;color:#666;font-style:italic;">AI Summary</span>';tb.appendChild(mfsdTTS.makeControls(sd.ai));card.appendChild(tb);}
+        if(mfsdTTS.supported){const tb=document.createElement('div');tb.className='mfsd-tts-summary-bar';tb.innerHTML='<span>AI Summary</span>';tb.appendChild(mfsdTTS.makeControls(sd.ai));card.appendChild(tb);}
         card.appendChild(asd);
         if(mfsdTTS.supported){setTimeout(()=>mfsdTTS.speakWithReveal(sd.ai,asd),400);}else{asd.textContent=sd.ai;}
       }
@@ -503,25 +502,25 @@
     // Context header
     const hdr=el("div"); hdr.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:12px;";
     const qi=el("div"); qi.appendChild(el("div","rag-pos","Question "+(savedIdx+1)+" of "+questions.length+" — "+q.q_text));
-    const rb=el("div"); rb.style.cssText="display:inline-flex;align-items:center;gap:6px;background:#FCEBEB;color:#A32D2D;font-size:12px;font-weight:500;padding:4px 10px;border-radius:6px;border:0.5px solid #F7C1C1;white-space:nowrap;flex-shrink:0;"; rb.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:#E24B4A;display:inline-block;"></span> You answered Red';
+    const rb=el("div","rag-red-badge"); rb.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:var(--rag-red);display:inline-block;"></span> You answered Red';
     hdr.appendChild(qi); hdr.appendChild(rb); card.appendChild(hdr);
 
     // Previous plan
     if (prevPlans.length > 0) {
-      const lp=prevPlans[0]; const pb=el("div"); pb.style.cssText="background:#fff8e6;border:0.5px solid #ffd966;border-left:3px solid #f0ad4e;border-radius:0 6px 6px 0;padding:12px 14px;margin-bottom:14px;";
-      const pt=el("div"); pt.style.cssText="font-size:12px;font-weight:500;color:#856404;margin-bottom:5px;"; pt.textContent="Your plan from Week "+lp.week_num;
-      const px=el("div"); px.style.cssText="font-size:13px;color:#333;line-height:1.6;"; px.textContent=lp.plan_text;
+      const lp=prevPlans[0]; const pb=el("div","rag-prev-plan-box");
+      const pt=el("div","plan-label"); pt.textContent="Your plan from Week "+lp.week_num;
+      const px=el("div","plan-text"); px.textContent=lp.plan_text;
       pb.appendChild(pt); pb.appendChild(px); card.appendChild(pb);
     }
 
     // SteveGPT section
-    const ss=el("div","rag-card"); ss.style.cssText="background:#E6F1FB;border:0.5px solid #B5D4F4;padding:16px;margin-bottom:0;";
-    const sn=el("div"); sn.style.cssText="font-size:12px;font-weight:500;color:#185FA5;margin-bottom:6px;"; sn.textContent="SteveGPT"; ss.appendChild(sn);
-    const st=el("div"); st.style.cssText="font-size:14px;color:#1d2327;line-height:1.6;"; ss.appendChild(st);
+    const ss=el("div","rag-stevegpt-box");
+    const sn=el("div","rag-stevegpt-label"); sn.textContent="SteveGPT"; ss.appendChild(sn);
+    const st=el("div"); ss.appendChild(st);
 
     // Suggestions label — hidden until TTS reaches it
-    const sugLabel = el("div");
-    sugLabel.style.cssText = "font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.04em;color:#666;margin:14px 0 8px;display:none;";
+    const sugLabel = el("div","rag-pos");
+    sugLabel.style.cssText = "margin:14px 0 8px;display:none;";
     sugLabel.textContent = "Some ideas to get you started";
     ss.appendChild(sugLabel);
 
@@ -543,10 +542,10 @@
     sugLabel.style.display = 'block';
     while (sugIdx < suggestions.length) {
       const sug = suggestions[sugIdx]; sugIdx++;
-      const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
-      const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=sugIdx+".";
-      const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
-      const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+      const sr=el("div","rag-suggestion-item");
+      const nm=el("div","rag-suggestion-num"); nm.textContent=sugIdx+".";
+      const tx=el("div","rag-suggestion-text"); tx.textContent=sug;
+      const hn=el("div","rag-suggestion-hint"); hn.textContent="Tap to copy into your plan";
       const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
       sr.appendChild(nm); sr.appendChild(inn);
       sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
@@ -576,10 +575,10 @@
       if (sugIdx >= suggestions.length) return;
       const sug = suggestions[sugIdx];
       const text = 'Idea ' + (sugIdx + 1) + '. ' + sug;
-      const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
-      const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(sugIdx+1)+".";
-      const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
-      const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+      const sr=el("div","rag-suggestion-item");
+      const nm=el("div","rag-suggestion-num"); nm.textContent=(sugIdx+1)+".";
+      const tx=el("div","rag-suggestion-text"); tx.textContent=sug;
+      const hn=el("div","rag-suggestion-hint"); hn.textContent="Tap to copy into your plan";
       const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
       sr.appendChild(nm); sr.appendChild(inn);
       sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
@@ -595,10 +594,10 @@
       if (suggestions.length > 0) {
         sugLabel.style.display = 'block';
         suggestions.forEach((sug,i)=>{
-          const sr=el("div"); sr.style.cssText="display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:6px;border:0.5px solid #ddd;margin-bottom:6px;background:#fff;cursor:pointer;";
-          const nm=el("div"); nm.style.cssText="font-size:12px;font-weight:500;color:#999;min-width:16px;margin-top:2px;flex-shrink:0;"; nm.textContent=(i+1)+".";
-          const tx=el("div"); tx.style.cssText="font-size:13px;color:#333;line-height:1.5;"; tx.textContent=sug;
-          const hn=el("div"); hn.style.cssText="font-size:11px;color:#aaa;margin-top:3px;"; hn.textContent="Tap to copy into your plan";
+          const sr=el("div","rag-suggestion-item");
+          const nm=el("div","rag-suggestion-num"); nm.textContent=(i+1)+".";
+          const tx=el("div","rag-suggestion-text"); tx.textContent=sug;
+          const hn=el("div","rag-suggestion-hint"); hn.textContent="Tap to copy into your plan";
           const inn=el("div"); inn.appendChild(tx); inn.appendChild(hn);
           sr.appendChild(nm); sr.appendChild(inn);
           sr.addEventListener('click',()=>{planTextarea.value=(planTextarea.value.trim()?planTextarea.value.trim()+' ':'')+sug;updateWordCount();planTextarea.focus();hn.textContent="Copied!";setTimeout(()=>{hn.textContent="Tap to copy into your plan";},2000);});
@@ -610,35 +609,35 @@
 
     // Chat
     const chatSec=el("div","rag-chatwrap"); chatSec.style.marginTop="14px";
-    const chatLbl=el("div"); chatLbl.style.cssText="font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.04em;color:#666;margin-bottom:8px;"; chatLbl.textContent="Ask SteveGPT for more ideas";
-    const chatHist=el("div","rag-chat-history"); chatHist.style.cssText="max-height:260px;overflow-y:auto;margin-bottom:10px;padding:10px;background:#f5f5f5;border-radius:6px;scroll-behavior:smooth;";
+    const chatLbl=el("div","rag-stevegpt-label"); chatLbl.textContent="Ask SteveGPT for more ideas";
+    const chatHist=el("div","rag-chat-history"); chatHist.style.maxHeight="260px";
     chatSec.appendChild(chatLbl); chatSec.appendChild(chatHist);
     const cir=el("div"); cir.style.cssText="display:flex;gap:8px;align-items:flex-end;";
-    const ci=document.createElement("textarea"); ci.rows=1; ci.placeholder="Ask a follow-up question…"; ci.style.cssText="flex:1;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;resize:none;font-family:inherit;line-height:1.4;";
+    const ci=document.createElement("textarea"); ci.rows=1; ci.placeholder="Ask a follow-up question…"; ci.style.flex="1";
     const csb=el("button","rag-btn","Send"); csb.style.cssText="padding:9px 16px;white-space:nowrap;";
     let cmb=null, ccm=false;
     const scl=()=>{if(!mfsdSTT.supported||!cmb)return;ci.value="";ci.placeholder="Listening…";cmb.classList.add("mfsd-mic-active");mfsdSTT.listen((t)=>{ci.value=t;},(t)=>{ci.value=t;scm();},(m)=>{ci.placeholder="Ask a follow-up question…";if(ccm)setTimeout(()=>scl(),800);});};
     if(mfsdSTT.supported){cmb=document.createElement("button");cmb.type="button";cmb.className="mfsd-mic-btn";cmb.title="Speak your question";cmb.innerHTML="🎤";cmb.addEventListener("click",()=>{ccm=!ccm;if(ccm)scl();else{mfsdSTT.stop();cmb.classList.remove("mfsd-mic-active");ci.placeholder="Ask a follow-up question…";}});}
-    const scm=async()=>{const msg=ci.value.trim();if(!msg)return;const ue=el("div","rag-chat-msg user-msg");ue.style.cssText="margin-bottom:8px;padding:8px 12px;background:#fff;border-radius:8px;border-left:3px solid #666;text-align:left;font-size:13px;";ue.textContent=msg;chatHist.appendChild(ue);ci.value="";ci.placeholder="Waiting…";csb.disabled=true;chatHist.scrollTop=chatHist.scrollHeight;
-      try{const r=await fetch(cfg.restUrlQuestionChat,{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':cfg.nonce||''},credentials:'same-origin',body:JSON.stringify({week,question_id:q.id,message:msg,is_red_followup:true})});if(r.ok){const d=await r.json();if(d.ok&&d.response){const ae=el("div","rag-chat-msg ai-msg");ae.style.cssText="margin-bottom:8px;padding:8px 12px;background:#e3f2fd;border-radius:8px;border-left:3px solid #2196f3;font-size:13px;";const as=document.createElement('span');ae.appendChild(as);chatHist.appendChild(ae);chatHist.scrollTop=chatHist.scrollHeight;if(mfsdTTS.supported){ae.appendChild(mfsdTTS.makeControls(d.response));mfsdTTS.speakWithReveal(d.response,as,()=>{if(ccm)scl();});}else{as.textContent=d.response;if(ccm)setTimeout(()=>scl(),500);}}}
+    const scm=async()=>{const msg=ci.value.trim();if(!msg)return;const ue=el("div","rag-chat-msg user-msg");ue.textContent=msg;chatHist.appendChild(ue);ci.value="";ci.placeholder="Waiting…";csb.disabled=true;chatHist.scrollTop=chatHist.scrollHeight;
+      try{const r=await fetch(cfg.restUrlQuestionChat,{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':cfg.nonce||''},credentials:'same-origin',body:JSON.stringify({week,question_id:q.id,message:msg,is_red_followup:true})});if(r.ok){const d=await r.json();if(d.ok&&d.response){const ae=el("div","rag-chat-msg ai-msg");const as=document.createElement('span');ae.appendChild(as);chatHist.appendChild(ae);chatHist.scrollTop=chatHist.scrollHeight;if(mfsdTTS.supported){ae.appendChild(mfsdTTS.makeControls(d.response));mfsdTTS.speakWithReveal(d.response,as,()=>{if(ccm)scl();});}else{as.textContent=d.response;if(ccm)setTimeout(()=>scl(),500);}}}
       }catch(err){console.error(err);}finally{csb.disabled=false;ci.placeholder="Ask a follow-up question…";}};
     csb.onclick=scm; ci.onkeydown=(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();scm();}};
     cir.appendChild(ci); if(cmb)cir.appendChild(cmb); cir.appendChild(csb); chatSec.appendChild(cir); card.appendChild(chatSec);
 
     // Plan section
-    const hr=el("hr"); hr.style.cssText="border:none;border-top:0.5px solid #e5e5e5;margin:18px 0;"; card.appendChild(hr);
+    const hr=el("hr","rag-section-hr"); card.appendChild(hr);
     const ph=el("div"); ph.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;";
-    const ptitle=el("div"); ptitle.style.cssText="font-size:15px;font-weight:500;color:#1d2327;"; ptitle.textContent="Your plan to move from Red to Amber";
-    const wcd=el("div"); wcd.style.cssText="text-align:right;font-size:12px;color:#666;line-height:1.5;"; wcd.innerHTML=`Target: <strong style="font-weight:500;">${wordTarget} words</strong><br><span id="rf-word-count" style="color:#185FA5;font-weight:500;">0 / ${wordTarget}</span>`;
+    const ptitle=el("div","rag-plan-title"); ptitle.textContent="Your plan to move from Red to Amber";
+    const wcd=el("div","rag-plan-word-count"); wcd.innerHTML=`Target: <strong style="font-weight:600;">${wordTarget} words</strong><br><span id="rf-word-count" style="color:var(--accent);font-weight:600;">0 / ${wordTarget}</span>`;
     ph.appendChild(ptitle); ph.appendChild(wcd); card.appendChild(ph);
-    const an=el("div"); an.style.cssText="font-size:12px;color:#666;background:#f8f8f8;border-radius:6px;padding:8px 12px;margin-bottom:12px;border:0.5px solid #e5e5e5;"; an.textContent=`Write your plan below — aim for ${wordTarget} words. Type it, speak it, or copy from the suggestions above.`; card.appendChild(an);
-    const bw=el("div"); bw.style.cssText="height:4px;background:#e5e5e5;border-radius:2px;margin-bottom:14px;"; const bf=el("div"); bf.style.cssText="height:100%;width:0%;background:#378ADD;border-radius:2px;transition:width 0.2s;"; bw.appendChild(bf); card.appendChild(bw);
-    const planTextarea=document.createElement("textarea"); planTextarea.rows=4; planTextarea.placeholder="Write your plan here — what will you do this week to improve?"; planTextarea.style.cssText="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;font-family:inherit;line-height:1.6;resize:vertical;"; card.appendChild(planTextarea);
-    const updateWordCount=()=>{const w=planTextarea.value.trim().split(/\s+/).filter(Boolean).length;const p=Math.min(100,Math.round((w/wordTarget)*100));bf.style.width=p+'%';bf.style.background=w>=wordTarget?'#5cb85c':'#378ADD';const d=document.getElementById('rf-word-count');if(d){d.textContent=w+' / '+wordTarget;d.style.color=w>=wordTarget?'#3b6d11':'#185FA5';}saveBtn.disabled=w<wordTarget;};
+    const an=el("div","rag-plan-note"); an.textContent=`Write your plan below — aim for ${wordTarget} words. Type it, speak it, or copy from the suggestions above.`; card.appendChild(an);
+    const bw=el("div","rag-progress-track"); const bf=el("div","rag-progress-fill"); bf.style.width="0%"; bw.appendChild(bf); card.appendChild(bw);
+    const planTextarea=document.createElement("textarea"); planTextarea.rows=4; planTextarea.placeholder="Write your plan here — what will you do this week to improve?"; planTextarea.className="rag-plan-textarea"; card.appendChild(planTextarea);
+    const updateWordCount=()=>{const w=planTextarea.value.trim().split(/\s+/).filter(Boolean).length;const p=Math.min(100,Math.round((w/wordTarget)*100));bf.style.width=p+'%';bf.style.background=w>=wordTarget?'var(--rag-green)':'var(--accent)';const d=document.getElementById('rf-word-count');if(d){d.textContent=w+' / '+wordTarget;d.style.color=w>=wordTarget?'var(--rag-green)':'var(--accent)';}saveBtn.disabled=w<wordTarget;};
     planTextarea.addEventListener('input',updateWordCount);
     const pir=el("div"); pir.style.cssText="display:flex;gap:8px;align-items:center;margin-top:10px;";
     if(mfsdSTT.supported){const pmb=document.createElement("button");pmb.type="button";pmb.className="mfsd-mic-btn";pmb.title="Speak your plan";pmb.innerHTML="🎤";let pma=false;pmb.addEventListener("click",()=>{pma=!pma;if(pma){pmb.classList.add("mfsd-mic-active");mfsdSTT.listen((t)=>{planTextarea.value=t;updateWordCount();},(t)=>{planTextarea.value=t;updateWordCount();pma=false;pmb.classList.remove("mfsd-mic-active");},()=>{pma=false;pmb.classList.remove("mfsd-mic-active");});}else{mfsdSTT.stop();pmb.classList.remove("mfsd-mic-active");}});pir.appendChild(pmb);}
-    const mh=el("div"); mh.style.cssText="font-size:12px;color:#aaa;"; mh.textContent="Tap mic to speak your plan"; pir.appendChild(mh); card.appendChild(pir);
+    const mh=el("div","rag-suggestion-hint"); mh.textContent="Tap mic to speak your plan"; pir.appendChild(mh); card.appendChild(pir);
     const saveBtn=el("button","rag-btn","Save my plan and continue"); saveBtn.style.cssText="width:100%;margin-top:14px;padding:12px;"; saveBtn.disabled=true;
     saveBtn.onclick=async()=>{const pt=planTextarea.value.trim();const w=pt.split(/\s+/).filter(Boolean).length;if(w<wordTarget)return;saveBtn.disabled=true;saveBtn.textContent="Saving…";
       try{await fetch(cfg.restUrlSaveRedPlan,{method:'POST',headers:{'Content-Type':'application/json','X-WP-Nonce':cfg.nonce||''},credentials:'same-origin',body:JSON.stringify({week,question_id:q.id,plan_text:pt})});}catch(err){console.error(err);}
