@@ -2,14 +2,14 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 7.2.0
+ * Version: 7.3.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '7.2.0';
+    const VERSION = '7.3.0';
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS      = 'mfsd_rag_questions';
@@ -228,16 +228,16 @@ final class MFSD_Weekly_RAG {
         // ── End ordering gate ──────────────────────────────────────────────
 
         wp_localize_script('mfsd-weekly-rag', 'MFSD_RAG_CFG', array(
-            'restUrlQuestions'      => esc_url_raw(rest_url('mfsd/v1/questions')),
-            'restUrlAnswer'         => esc_url_raw(rest_url('mfsd/v1/answer')),
-            'restUrlSummary'        => esc_url_raw(rest_url('mfsd/v1/summary')),
-            'restUrlStatus'         => esc_url_raw(rest_url('mfsd/v1/status')),
-            'restUrlPrevious'       => esc_url_raw(rest_url('mfsd/v1/previous-answer')),
-            'restUrlGuidance'       => esc_url_raw(rest_url('mfsd/v1/question-guidance')),
-            'restUrlAllWeeks'       => esc_url_raw(rest_url('mfsd/v1/all-weeks-summary')),
-            'restUrlQuestionChat'   => esc_url_raw(rest_url('mfsd/v1/question-chat')),
-            'restUrlRedSuggestions' => esc_url_raw(rest_url('mfsd/v1/red-suggestions')),
-            'restUrlSaveRedPlan'    => esc_url_raw(rest_url('mfsd/v1/red-plan')),
+            'restUrlQuestions'      => esc_url_raw(rest_url('mfsd-rag/v1/questions')),
+            'restUrlAnswer'         => esc_url_raw(rest_url('mfsd-rag/v1/answer')),
+            'restUrlSummary'        => esc_url_raw(rest_url('mfsd-rag/v1/summary')),
+            'restUrlStatus'         => esc_url_raw(rest_url('mfsd-rag/v1/status')),
+            'restUrlPrevious'       => esc_url_raw(rest_url('mfsd-rag/v1/previous-answer')),
+            'restUrlGuidance'       => esc_url_raw(rest_url('mfsd-rag/v1/question-guidance')),
+            'restUrlAllWeeks'       => esc_url_raw(rest_url('mfsd-rag/v1/all-weeks-summary')),
+            'restUrlQuestionChat'   => esc_url_raw(rest_url('mfsd-rag/v1/question-chat')),
+            'restUrlRedSuggestions' => esc_url_raw(rest_url('mfsd-rag/v1/red-suggestions')),
+            'restUrlSaveRedPlan'    => esc_url_raw(rest_url('mfsd-rag/v1/red-plan')),
             'nonce'                 => wp_create_nonce('wp_rest'),
             'week'                  => $week,
             'ttsVoice'              => get_option('mfsd_rag_tts_voice', ''),
@@ -272,18 +272,18 @@ final class MFSD_Weekly_RAG {
             array('red-plan',          'CREATABLE', 'api_save_red_plan'),
         );
         foreach ($routes as $r) {
-            register_rest_route('mfsd/v1', '/' . $r[0], array(
+            register_rest_route('mfsd-rag/v1', '/' . $r[0], array(
                 'methods'             => constant('WP_REST_Server::' . $r[1]),
                 'callback'            => array($this, $r[2]),
                 'permission_callback' => $std,
             ));
         }
-        register_rest_route('mfsd/v1', '/admin-reset-week', array(
+        register_rest_route('mfsd-rag/v1', '/admin-reset-week', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_admin_reset_week'),
             'permission_callback' => function() { return current_user_can('manage_options'); },
         ));
-        register_rest_route('mfsd/v1', '/admin-reset-cm-progress', array(
+        register_rest_route('mfsd-rag/v1', '/admin-reset-cm-progress', array(
             'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'api_admin_reset_cm_progress'),
             'permission_callback' => function() { return current_user_can('manage_options'); },
@@ -841,7 +841,7 @@ final class MFSD_Weekly_RAG {
         global $wpdb;
         $active_tab=$_GET['tab']??'settings'; $active_qtype=$_GET['qtype']??'RAG'; $msg=$_GET['msg']??'';
         $cache_on=get_option('mfsd_rag_cache_summaries','1')==='1'; $tts_voice=get_option('mfsd_rag_tts_voice',''); $conv_mode=get_option('mfsd_rag_conversation_mode','polite'); $text_reveal=get_option('mfsd_rag_text_reveal','block'); $red_plan_mode=get_option('mfsd_rag_red_plan_mode','fixed-50');
-        $reset_url=esc_url_raw(rest_url('mfsd/v1/admin-reset-week')); $nonce_rest=wp_create_nonce('wp_rest'); $users=get_users(['orderby'=>'display_name','order'=>'ASC','number'=>500]);
+        $reset_url=esc_url_raw(rest_url('mfsd-rag/v1/admin-reset-week')); $nonce_rest=wp_create_nonce('wp_rest'); $users=get_users(['orderby'=>'display_name','order'=>'ASC','number'=>500]);
         $q_table=$wpdb->prefix.self::TBL_QUESTIONS; $questions_all=$wpdb->get_results("SELECT * FROM $q_table ORDER BY q_type ASC, q_order ASC",ARRAY_A); $q_by_type=['RAG'=>[],'MBTI'=>[],'DISC'=>[]]; foreach($questions_all as $q){$t=$q['q_type'];if(isset($q_by_type[$t]))$q_by_type[$t][]=$q;}
         ?>
         <div class="wrap"><h1>🎯 MFSD Weekly RAG — Admin</h1>
@@ -1051,7 +1051,7 @@ final class MFSD_Weekly_RAG {
                 if (!confirm('Reset ordering progress for ' + slug + ' for ' + name + '?\n\nThis only removes the ordering record — RAG answer data is unaffected.')) return;
                 btn.disabled = true; st.textContent = 'Resetting…'; st.style.color = '#666';
                 try {
-                    const r = await fetch('<?php echo esc_url_raw(rest_url('mfsd/v1/admin-reset-cm-progress')); ?>', {
+                    const r = await fetch('<?php echo esc_url_raw(rest_url('mfsd-rag/v1/admin-reset-cm-progress')); ?>', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo wp_create_nonce('wp_rest'); ?>' },
                         body: JSON.stringify({ user_id: parseInt(uid), task_slug: slug })
