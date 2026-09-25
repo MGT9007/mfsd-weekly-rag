@@ -2,14 +2,37 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 7.3.0
+ * Version: 7.4.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
 final class MFSD_Weekly_RAG {
-    const VERSION = '7.3.0';
+    const VERSION = '7.4.0';
+
+    /** Student-facing personality names (mirrors mfsd-personality-test). Codes are never given to the AI. */
+    const PERSONALITY_NAMES = array(
+        'ISTJ' => array('The Logistician', 'Sentinel'),  'ISFJ' => array('The Defender', 'Sentinel'),
+        'ESTJ' => array('The Executive', 'Sentinel'),    'ESFJ' => array('The Consul', 'Sentinel'),
+        'INFJ' => array('The Advocate', 'Diplomat'),     'INFP' => array('The Mediator', 'Diplomat'),
+        'ENFJ' => array('The Protagonist', 'Diplomat'),  'ENFP' => array('The Campaigner', 'Diplomat'),
+        'INTJ' => array('The Architect', 'Analyst'),     'INTP' => array('The Logician', 'Analyst'),
+        'ENTJ' => array('The Commander', 'Analyst'),     'ENTP' => array('The Debater', 'Analyst'),
+        'ISTP' => array('The Virtuoso', 'Explorer'),     'ISFP' => array('The Adventurer', 'Explorer'),
+        'ESTP' => array('The Entrepreneur', 'Explorer'), 'ESFP' => array('The Entertainer', 'Explorer'),
+    );
+
+    /** Plain-English communication styles used instead of DISC letters. */
+    const COMMUNICATION_STYLES = array(
+        'D' => 'direct and results-focused',
+        'I' => 'outgoing and enthusiastic',
+        'S' => 'steady and supportive',
+        'C' => 'careful and detail-focused',
+    );
+
+    /** Appended to every AI prompt — students must never see test names or letter codes. */
+    const NO_CODES_RULE = "IMPORTANT: Never mention MBTI, Myers-Briggs, DISC, or any letter-code personality labels (e.g. INFJ, DI). Refer to personality only by the name given, if one is given.";
     const NONCE_ACTION = 'mfsd_rag_nonce';
 
     const TBL_QUESTIONS      = 'mfsd_rag_questions';
@@ -375,20 +398,24 @@ final class MFSD_Weekly_RAG {
             $pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",$user_id,$pw));
             if ($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0)) {
                 $previous_week_summary=array('week'=>$pw,'reds'=>(int)$pr['reds'],'ambers'=>(int)$pr['ambers'],'greens'=>(int)$pr['greens'],'total_score'=>(int)$pr['total_score'],'mbti_type'=>$pm);
-                if (isset($GLOBALS['mwai'])) {
-                    try {
-                        $mwai    = $GLOBALS['mwai'];
-                        $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
-                        $age_desc = $this->get_age_description($user_id);
-                        $intro_message = $mwai->simpleTextQuery(
+                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+                $age_desc = $this->get_age_description($user_id);
+                $intro_prompt =
                             "You are SteveGPT speaking directly to $username ($age_desc). " .
-                            "Last week Week $pw: {$pr['greens']} Greens, {$pr['ambers']} Ambers, {$pr['reds']} Reds" . ($pm ? " MBTI:$pm" : "") . ". " .
+                            "Last week Week $pw: {$pr['greens']} Greens, {$pr['ambers']} Ambers, {$pr['reds']} Reds" . ($this->personality_label($pm) ? " Personality: " . $this->personality_label($pm) : "") . ". " .
                             "Write a brief warm welcome for Week $week (3-4 sentences). " .
                             "Use 'you'/'your' only. NEVER say 'your child'. " .
-                            "Pitch the language and vocabulary appropriately for someone $age_desc."
-                        );
-                    } catch(Exception $e) {}
-                }
+                            "Pitch the language and vocabulary appropriately for someone $age_desc.";
+                $intro_message = $this->steve_task('week_intro', $intro_prompt, array(
+                    'student_name'  => $username,
+                    'age_desc'      => $age_desc,
+                    'week'          => $week,
+                    'previous_week' => $pw,
+                    'greens'        => (int) $pr['greens'],
+                    'ambers'        => (int) $pr['ambers'],
+                    'reds'          => (int) $pr['reds'],
+                    'personality'   => $this->personality_label($pm),
+                ), $user_id) ?: null;
             }
         }
 
@@ -445,37 +472,41 @@ final class MFSD_Weekly_RAG {
         }
 
         $guidance='';
-        if (isset($GLOBALS['mwai'])) {
-            try {
-                $mwai     = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
-                $age_desc = $this->get_age_description($uid);
+        $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
+        $age_desc = $this->get_age_description($uid);
 
-                if ($question['q_type']==='MBTI') {
-                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc) completing their own personality assessment.\n\n";
-                    $prompt .= "CRITICAL: Address $username as 'you'/'your' only. NEVER say 'your child' or third person.\n";
-                    $prompt .= "Pitch language and vocabulary appropriately for someone $age_desc.\n\n";
-                    $prompt .= "Question: \"{$question['q_text']}\"\n\n";
-                    $prompt .= "Write 2-3 sentences explaining what this MBTI question explores and how to answer (Red=doesn't describe you, Amber=sometimes, Green=describes you well). Remind them there are no right or wrong answers.";
-                } else {
-                    $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc) completing their own self-assessment.\n\n";
-                    $prompt .= "CRITICAL RULES:\n";
-                    $prompt .= "- Address $username as 'you'/'your' only. NEVER say 'your child' or use third person.\n";
-                    $prompt .= "- Pitch all language and vocabulary appropriately for someone $age_desc.\n\n";
-                    $prompt .= "Question: \"{$question['q_text']}\"\n\n";
-                    $prompt .= "Write 3-4 sentences explaining what to reflect on and how to answer (Red=struggling, Amber=mixed, Green=confident).";
-                    if (!empty($previous)) {
-                        $prompt .= "\nPrevious answers: ";
-                        foreach ($previous as $ans) $prompt .= "Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." ";
-                        $prompt .= "\nAcknowledge their progress, speaking directly to them.";
-                    }
-                    if ($prev_red_plan) {
-                        $prompt .= "\n\nIMPORTANT: Last week (Week {$prev_red_plan['week_num']}), $username made this plan to improve: \"{$prev_red_plan['plan_text']}\". Acknowledge this plan warmly — how did they get on?";
-                    }
-                }
-                $guidance = $mwai->simpleTextQuery($prompt);
-            } catch(Exception $e) { error_log('MFSD RAG guidance: '.$e->getMessage()); }
+        if ($question['q_type']==='MBTI') {
+            $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc) completing their own personality assessment.\n\n";
+            $prompt .= "CRITICAL: Address $username as 'you'/'your' only. NEVER say 'your child' or third person.\n";
+            $prompt .= "Pitch language and vocabulary appropriately for someone $age_desc.\n\n";
+            $prompt .= "Question: \"{$question['q_text']}\"\n\n";
+            $prompt .= "Write 2-3 sentences explaining what this personality question explores and how to answer (Red=doesn't describe you, Amber=sometimes, Green=describes you well). Remind them there are no right or wrong answers.";
+        } else {
+            $prompt  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc) completing their own self-assessment.\n\n";
+            $prompt .= "CRITICAL RULES:\n";
+            $prompt .= "- Address $username as 'you'/'your' only. NEVER say 'your child' or use third person.\n";
+            $prompt .= "- Pitch all language and vocabulary appropriately for someone $age_desc.\n\n";
+            $prompt .= "Question: \"{$question['q_text']}\"\n\n";
+            $prompt .= "Write 3-4 sentences explaining what to reflect on and how to answer (Red=struggling, Amber=mixed, Green=confident).";
+            if (!empty($previous)) {
+                $prompt .= "\nPrevious answers: ";
+                foreach ($previous as $ans) $prompt .= "Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." ";
+                $prompt .= "\nAcknowledge their progress, speaking directly to them.";
+            }
+            if ($prev_red_plan) {
+                $prompt .= "\n\nIMPORTANT: Last week (Week {$prev_red_plan['week_num']}), $username made this plan to improve: \"{$prev_red_plan['plan_text']}\". Acknowledge this plan warmly — how did they get on?";
+            }
         }
+        $prev_text = '';
+        foreach ((array) $previous as $ans) $prev_text .= "Week{$ans['week_num']}:".($ans['answer']==='R'?'Red':($ans['answer']==='A'?'Amber':'Green'))." ";
+        $guidance = $this->steve_task('guidance', $prompt, array(
+            'student_name'      => $username,
+            'age_desc'          => $age_desc,
+            'question_text'     => $question['q_text'],
+            'question_type'     => $question['q_type'],
+            'previous_answers'  => trim($prev_text),
+            'previous_red_plan' => $prev_red_plan ? $prev_red_plan['plan_text'] : '',
+        ), $uid);
 
         return new WP_REST_Response(array('ok'=>true,'guidance'=>$guidance,'question'=>$question['q_text'],'type'=>$question['q_type']),200);
     }
@@ -548,43 +579,41 @@ final class MFSD_Weekly_RAG {
         $word_target = $this->get_red_plan_word_target($user_id);
         $steve_intro = ''; $suggestions = array();
 
-        if (isset($GLOBALS['mwai'])) {
-            try {
-                $mwai     = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
-                $age_desc = $this->get_age_description($user_id);
+        $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
+        $age_desc = $this->get_age_description($user_id);
 
-                $prompt  = "You are SteveGPT, a supportive AI coach for $username ($age_desc) on their High Performance Pathway.\n";
-                $prompt .= "Pitch all language and vocabulary appropriately for someone $age_desc.\n";
-                $prompt .= "Address $username as 'you'. No asterisks or markdown.\n\n";
-                $prompt .= "They just answered RED to: \"{$question['q_text']}\"\n\n";
+        $prompt  = "You are SteveGPT, a supportive AI coach for $username ($age_desc) on their High Performance Pathway.\n";
+        $prompt .= "Pitch all language and vocabulary appropriately for someone $age_desc.\n";
+        $prompt .= "Address $username as 'you'. No asterisks or markdown.\n\n";
+        $prompt .= "They just answered RED to: \"{$question['q_text']}\"\n\n";
 
-                $last_plan = !empty($prev_plans) ? $prev_plans[0] : null;
-                if ($last_plan && $prev_answer === 'R') {
-                    $prompt .= "CONTEXT: Last week (Week {$last_plan['week_num']}) they made this plan:\n\"{$last_plan['plan_text']}\"\nHowever they have answered Red again. Write a warm intro (2-3 sentences) acknowledging they tried, gently asking what got in the way, and setting up a better plan this time.\n\n";
-                } elseif ($last_plan && $prev_answer !== 'R') {
-                    $prompt .= "CONTEXT: They had improved previously but returned to Red. Write a warm intro (2-3 sentences) acknowledging this can happen and encouraging them to make a plan.\n\n";
-                } else {
-                    $prompt .= "Write a warm intro (2-3 sentences): thank them for being honest, say a Red means they're self-aware, set up that you'll suggest ideas.\n\n";
-                }
-                $prompt .= "Then give exactly 3 practical suggestions to help them improve by next week.\n";
-                $prompt .= "Format EXACTLY as:\nINTRO: [intro text]\nSUGGESTION_1: [suggestion]\nSUGGESTION_2: [suggestion]\nSUGGESTION_3: [suggestion]\n\n";
-                $prompt .= "Each suggestion 1-2 sentences, practical, age-appropriate for someone $age_desc.";
-
-                $response = $mwai->simpleTextQuery($prompt);
-                foreach (explode("\n",$response) as $line) {
-                    $line = trim($line);
-                    if (strpos($line,'INTRO:')===0) $steve_intro = trim(substr($line,6));
-                    elseif (preg_match('/^SUGGESTION_\d+:\s*(.+)/',$line,$m)) $suggestions[] = trim($m[1]);
-                }
-                if (!$steve_intro) $steve_intro = "Thanks for being honest — a Red means you know where to grow! Let's make a plan together.";
-                if (empty($suggestions)) $suggestions = array("Try practising this skill for just 5 minutes each day this week.","Talk to someone you trust about this.","Set one specific goal you can achieve by next week.");
-            } catch(Exception $e) {
-                error_log('MFSD RAG red suggestions: '.$e->getMessage());
-                $steve_intro = "Thanks for being honest. Let's build a plan to move this forward!";
-                $suggestions = array("Try a small daily practice related to this question.","Ask someone you trust for advice or support.","Set one specific goal you can achieve by next week.");
-            }
+        $last_plan = !empty($prev_plans) ? $prev_plans[0] : null;
+        if ($last_plan && $prev_answer === 'R') {
+            $prompt .= "CONTEXT: Last week (Week {$last_plan['week_num']}) they made this plan:\n\"{$last_plan['plan_text']}\"\nHowever they have answered Red again. Write a warm intro (2-3 sentences) acknowledging they tried, gently asking what got in the way, and setting up a better plan this time.\n\n";
+        } elseif ($last_plan && $prev_answer !== 'R') {
+            $prompt .= "CONTEXT: They had improved previously but returned to Red. Write a warm intro (2-3 sentences) acknowledging this can happen and encouraging them to make a plan.\n\n";
+        } else {
+            $prompt .= "Write a warm intro (2-3 sentences): thank them for being honest, say a Red means they're self-aware, set up that you'll suggest ideas.\n\n";
         }
+        $prompt .= "Then give exactly 3 practical suggestions to help them improve by next week.\n";
+        $prompt .= "Format EXACTLY as:\nINTRO: [intro text]\nSUGGESTION_1: [suggestion]\nSUGGESTION_2: [suggestion]\nSUGGESTION_3: [suggestion]\n\n";
+        $prompt .= "Each suggestion 1-2 sentences, practical, age-appropriate for someone $age_desc.";
+
+        $last_plan_text = $last_plan ? $last_plan['plan_text'] : '';
+        $response = $this->steve_task('red_suggestions', $prompt, array(
+            'student_name'   => $username,
+            'age_desc'       => $age_desc,
+            'question_text'  => $question['q_text'],
+            'last_plan'      => $last_plan_text,
+            'previous_answer'=> (string) $prev_answer,
+        ), $user_id);
+        foreach (explode("\n",$response) as $line) {
+            $line = trim($line);
+            if (strpos($line,'INTRO:')===0) $steve_intro = trim(substr($line,6));
+            elseif (preg_match('/^SUGGESTION_\d+:\s*(.+)/',$line,$m)) $suggestions[] = trim($m[1]);
+        }
+        if (!$steve_intro) $steve_intro = "Thanks for being honest — a Red means you know where to grow! Let's make a plan together.";
+        if (empty($suggestions)) $suggestions = array("Try practising this skill for just 5 minutes each day this week.","Talk to someone you trust about this.","Set one specific goal you can achieve by next week.");
 
         return new WP_REST_Response(array('ok'=>true,'steve_intro'=>$steve_intro,'suggestions'=>$suggestions,'prev_plans'=>$prev_plans,'prev_answer'=>$prev_answer,'word_target'=>$word_target,'question'=>$question['q_text']),200);
     }
@@ -615,28 +644,34 @@ final class MFSD_Weekly_RAG {
         $prev=array(); if($week>1&&$q['q_type']==='RAG'){$a=$wpdb->prefix.self::TBL_ANSWERS_RAG;$prev=$wpdb->get_results($wpdb->prepare("SELECT week_num,answer FROM $a WHERE user_id=%d AND question_id=%d AND week_num<%d ORDER BY week_num ASC",$uid,$question_id,$week),ARRAY_A);}
 
         $resp='';
-        if (isset($GLOBALS['mwai'])) {
-            try {
-                $mwai     = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
-                $age_desc = $this->get_age_description($uid);
+        $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
+        $age_desc = $this->get_age_description($uid);
 
-                if ($is_red_followup) {
-                    $p  = "You are SteveGPT, a supportive AI coach for $username ($age_desc).\n";
-                    $p .= "They answered RED to: \"{$q['q_text']}\"\n";
-                    $p .= "They are working on a plan to improve to Amber. Give practical, encouraging suggestions.\n";
-                    $p .= "Address $username as 'you'. NEVER say 'your child'. Pitch language for someone $age_desc. 2-3 sentences.\n\nStudent: $msg";
-                } else {
-                    $p  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc), Week $week, High Performance Pathway.\n";
-                    $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'. Pitch language for someone $age_desc.\n";
-                    $p .= "Question: \"{$q['q_text']}\"\n";
-                    if ($q['q_type']==='MBTI') $p .= "MBTI question (Red=doesn't describe you, Amber=sometimes, Green=describes you well).\n";
-                    else { $p.="RAG question (Red=struggling, Amber=mixed, Green=confident).\n"; if(!empty($prev)){$p.="Previous: ";foreach($prev as $pa)$p.="W{$pa['week_num']}:".($pa['answer']==='R'?'R':($pa['answer']==='A'?'A':'G'))." ";} }
-                    $p .= "2-3 sentences, warm.\n\nStudent: $msg";
-                }
-                $resp = $mwai->simpleTextQuery($p);
-            } catch(Exception $e) { $resp = "I'm having trouble connecting right now. Please try again."; }
-        } else { $resp = "AI assistance is currently unavailable."; }
+        if ($is_red_followup) {
+            $p  = "You are SteveGPT, a supportive AI coach for $username ($age_desc).\n";
+            $p .= "They answered RED to: \"{$q['q_text']}\"\n";
+            $p .= "They are working on a plan to improve to Amber. Give practical, encouraging suggestions.\n";
+            $p .= "Address $username as 'you'. NEVER say 'your child'. Pitch language for someone $age_desc. 2-3 sentences.\n\nStudent: $msg";
+        } else {
+            $p  = "You are SteveGPT, a supportive AI coach speaking DIRECTLY TO $username ($age_desc), Week $week, High Performance Pathway.\n";
+            $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'. Pitch language for someone $age_desc.\n";
+            $p .= "Question: \"{$q['q_text']}\"\n";
+            if ($q['q_type']==='MBTI') $p .= "Personality question (Red=doesn't describe you, Amber=sometimes, Green=describes you well).\n";
+            else { $p.="RAG question (Red=struggling, Amber=mixed, Green=confident).\n"; if(!empty($prev)){$p.="Previous: ";foreach($prev as $pa)$p.="W{$pa['week_num']}:".($pa['answer']==='R'?'R':($pa['answer']==='A'?'A':'G'))." ";} }
+            $p .= "2-3 sentences, warm.\n\nStudent: $msg";
+        }
+        $prev_text = '';
+        foreach ((array) $prev as $pa) $prev_text .= "W{$pa['week_num']}:{$pa['answer']} ";
+        $resp = $this->steve_task($is_red_followup ? 'red_chat' : 'question_chat', $p, array(
+            'student_name'     => $username,
+            'age_desc'         => $age_desc,
+            'week'             => $week,
+            'question_text'    => $q['q_text'],
+            'question_type'    => $q['q_type'],
+            'previous_answers' => trim($prev_text),
+            'message'          => $msg,
+        ), $uid);
+        if ($resp === '') $resp = "I'm having trouble connecting right now. Please try again.";
 
         return new WP_REST_Response(array('ok'=>true,'response'=>$resp),200);
     }
@@ -681,25 +716,34 @@ final class MFSD_Weekly_RAG {
         }
 
         $aiIntro='';
-        if (isset($GLOBALS['mwai'])) {
-            try {
-                $mwai     = $GLOBALS['mwai'];
-                $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
-                $age_desc = $this->get_age_description($uid);
+        $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
+        $age_desc = $this->get_age_description($uid);
 
-                $p  = "You are SteveGPT, a supportive coach speaking DIRECTLY TO $username ($age_desc) about their High Performance Pathway.\n";
-                $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'. Pitch all language for someone $age_desc.\n\n";
-                $p .= "WEEK $week RESULTS:\nRAG: {$agg['reds']}R {$agg['ambers']}A {$agg['greens']}G (Score:{$agg['total_score']})\n";
-                if ($mtu) $p .= "MBTI: $mtu" . ($type ? " (this week)" : " (previous weeks)") . "\n";
-                if ($disc_type) $p .= "DISC: $disc_type — D={$disc_scores['D']['percent']}% I={$disc_scores['I']['percent']}% S={$disc_scores['S']['percent']}% C={$disc_scores['C']['percent']}%\n";
-                if (!empty($pw)){$p.="\nPROGRESS:\n";foreach($pw as $wpw)$p.="Week{$wpw['week']}: {$wpw['rag']['reds']}R/{$wpw['rag']['ambers']}A/{$wpw['rag']['greens']}G".($wpw['mbti']?" MBTI:{$wpw['mbti']}":"")."\n";}
-                if (!empty($djr)){$p.="\nDREAM JOBS:\n";foreach(array_slice($djr,0,5) as $i=>$j)$p.=($i+1).". $j\n";}
-                $p .= $plan_context;
-                $p .= "Write a warm, insightful summary: celebrate strengths, note progress, explain personality, acknowledge development areas, give 2-3 actionable steps.\n";
-                $p .= "UK context. Bullet points. Apply Steve's Solutions Mindset: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
-                $aiIntro = $mwai->simpleTextQuery($p);
-            } catch(Exception $e) { error_log('MFSD RAG summary: '.$e->getMessage()); }
-        }
+        $p  = "You are SteveGPT, a supportive coach speaking DIRECTLY TO $username ($age_desc) about their High Performance Pathway.\n";
+        $p .= "CRITICAL: Address $username as 'you'/'your'. NEVER say 'your child'. Pitch all language for someone $age_desc.\n\n";
+        $p .= "WEEK $week RESULTS:\nRAG: {$agg['reds']}R {$agg['ambers']}A {$agg['greens']}G (Score:{$agg['total_score']})\n";
+        $personality_label = $this->personality_label($mtu);
+        $comm_style        = $this->communication_style_label($disc_type);
+        if ($personality_label) $p .= "Personality type: $personality_label" . ($type ? " (this week)" : " (previous weeks)") . "\n";
+        if ($comm_style) $p .= "Communication style: $comm_style\n";
+        if (!empty($pw)){$p.="\nPROGRESS:\n";foreach($pw as $wpw)$p.="Week{$wpw['week']}: {$wpw['rag']['reds']}R/{$wpw['rag']['ambers']}A/{$wpw['rag']['greens']}G".($this->personality_label($wpw['mbti']) ? " Personality: " . $this->personality_label($wpw['mbti']) : "")."\n";}
+        if (!empty($djr)){$p.="\nDREAM JOBS:\n";foreach(array_slice($djr,0,5) as $i=>$j)$p.=($i+1).". $j\n";}
+        $p .= $plan_context;
+        $p .= "Write a warm, insightful summary: celebrate strengths, note progress, reflect on their personality type and communication style (by name only), acknowledge development areas, give 2-3 actionable steps.\n";
+        $p .= "UK context. Bullet points. Apply Steve's Solutions Mindset: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
+        $aiIntro = $this->steve_task('summary', $p, array(
+            'student_name' => $username,
+            'age_desc'     => $age_desc,
+            'week'         => $week,
+            'reds'         => (int) $agg['reds'],
+            'ambers'       => (int) $agg['ambers'],
+            'greens'       => (int) $agg['greens'],
+            'total_score'  => (int) $agg['total_score'],
+            'personality'         => $personality_label,
+            'communication_style' => $comm_style,
+            'dream_jobs'   => !empty($djr) ? implode(', ', array_slice($djr, 0, 5)) : '',
+            'plan_context' => $plan_context,
+        ), $uid);
 
         if (!empty($aiIntro)){$wpdb->replace($ws,array('user_id'=>$uid,'week_num'=>$week,'reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'ai_summary'=>$aiIntro),array('%d','%d','%d','%d','%d','%d','%s','%s','%s'));
 
@@ -830,7 +874,64 @@ final class MFSD_Weekly_RAG {
             'option' => 'mfsd_stevegpt_map_rag_chat',
             'tokens' => [],
         ];
+        $task_slots = [
+            'week_intro'      => ['Week intro',          ['student_name', 'age_desc', 'week', 'previous_week', 'greens', 'ambers', 'reds', 'personality']],
+            'guidance'        => ['Question guidance',   ['student_name', 'age_desc', 'question_text', 'question_type', 'previous_answers', 'previous_red_plan']],
+            'red_suggestions' => ['Red plan suggestions (must output INTRO:/SUGGESTION_1-3: lines)', ['student_name', 'age_desc', 'question_text', 'last_plan', 'previous_answer']],
+            'question_chat'   => ['Question chat',       ['student_name', 'age_desc', 'week', 'question_text', 'question_type', 'previous_answers', 'message']],
+            'red_chat'        => ['Red plan chat',       ['student_name', 'age_desc', 'week', 'question_text', 'question_type', 'previous_answers', 'message']],
+            'summary'         => ['Week summary',        ['student_name', 'age_desc', 'week', 'reds', 'ambers', 'greens', 'total_score', 'personality', 'communication_style', 'dream_jobs', 'plan_context']],
+        ];
+        foreach ($task_slots as $key => $def) {
+            $slots[] = [
+                'plugin' => 'Weekly RAG',
+                'role'   => $def[0],
+                'option' => 'mfsd_stevegpt_map_rag_' . $key,
+                'tokens' => $def[1],
+            ];
+        }
         return $slots;
+    }
+
+    /**
+     * SteveGPT task call (MFSD chatbot implementation pattern — task mode).
+     * Reads the chatbot from mfsd_stevegpt_map_rag_{$slot}. If the chatbot has a prompt
+     * template the tokens are rendered into it; otherwise the built-in prompt is sent.
+     * Returns '' when the slot is not configured or on error.
+     */
+    /** "The Advocate (Diplomat family)" for a 4-letter code, or '' if unknown. */
+    private function personality_label($code): string {
+        $code = strtoupper(trim((string) $code));
+        return isset(self::PERSONALITY_NAMES[$code])
+            ? self::PERSONALITY_NAMES[$code][0] . ' (' . self::PERSONALITY_NAMES[$code][1] . ' family)'
+            : '';
+    }
+
+    /** "outgoing and enthusiastic, and also steady and supportive" for e.g. 'IS', or '' if unknown. */
+    private function communication_style_label($disc_type): string {
+        $letters = str_split(strtoupper(preg_replace('/[^DISCdisc]/', '', (string) $disc_type)));
+        $styles  = array();
+        foreach ($letters as $l) {
+            if (isset(self::COMMUNICATION_STYLES[$l])) $styles[] = self::COMMUNICATION_STYLES[$l];
+        }
+        if (!$styles) return '';
+        return count($styles) > 1 ? $styles[0] . ', and also ' . $styles[1] : $styles[0];
+    }
+
+    private function steve_task(string $slot, string $fallback_prompt, array $tokens, int $user_id): string {
+        $chatbot_id = get_option('mfsd_stevegpt_map_rag_' . $slot, '');
+        if (!$chatbot_id || !class_exists('SteveGPT_Chatbot')) return '';
+
+        try {
+            $chatbot = SteveGPT_Chatbot::get($chatbot_id);
+            $config  = $chatbot->get_config();
+            $prompt  = !empty($config['prompt_template']) ? $chatbot->render_prompt($tokens) : $fallback_prompt;
+            $prompt .= "\n\n" . self::NO_CODES_RULE;
+            return (string) $chatbot->query($prompt, $user_id);
+        } catch (Exception $e) {
+            error_log('[MFSD RAG] SteveGPT task error (' . $slot . '): ' . $e->getMessage());
+            return '';
+        }
     }
 
     public function admin_menu() {
