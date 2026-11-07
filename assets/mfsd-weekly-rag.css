@@ -1010,3 +1010,56 @@ input.mfsd-listening {
   .disc-plot-container, .disc-breakdown { page-break-inside: avoid; }
   #disc-polar-plot { max-width: 300px; }
 }
+/* ── 8.0.0: Review your cards (spec §7) ─────────────────────────────── */
+.rag-review-list { display: flex; flex-direction: column; gap: 12px; margin: 12px 0 16px; }
+.rag-review-row {
+  background: var(--bg-inner); border: 1px solid var(--border-dim); border-left: 5px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; color: var(--text);
+}
+.rag-review-row.is-green { border-left-color: var(--rag-green); }
+.rag-review-row.is-amber { border-left-color: var(--rag-amber); }
+.rag-review-row.is-red   { border-left-color: var(--rag-red); }
+.rag-review-row.is-error { border-left-color: var(--text-muted); }
+.rag-review-src { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.rag-review-card-title { font: 700 16px/1.35 var(--font-heading); margin: 4px 0; overflow-wrap: anywhere; }
+.rag-review-line, .rag-review-status, .rag-review-thinking { font-size: 14px; color: var(--text-muted); }
+.rag-review-status:empty { display: none; }
+.rag-review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rag-review-question { flex: 1 1 100%; margin: 0 0 4px; font-size: 15px; color: var(--text); }
+.rag-review-btn {
+  flex: 1 1 0; min-width: 88px; min-height: 44px; padding: 8px 12px; border-radius: 10px; cursor: pointer;
+  font: 700 15px var(--font-heading); border: 2px solid var(--border); background: transparent; color: var(--text-light);
+}
+.rag-review-btn.is-done    { border-color: var(--rag-green); }
+.rag-review-btn.is-started { border-color: var(--rag-amber); }
+.rag-review-btn.is-notyet  { border-color: var(--rag-red); }
+.rag-review-btn:disabled   { opacity: .5; cursor: default; }
+.rag-review-continue, .rag-plan-save { width: 100%; min-height: 44px; }
+.rag-review-continue:disabled, .rag-plan-save:disabled { opacity: .5; cursor: default; transform: none; box-shadow: none; }
+
+/* ── 8.0.0: Your plan for next week (spec §5, §9) ───────────────────── */
+.rag-plan { margin: 18px 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-inner); color: var(--text); }
+.rag-plan.is-saved { border-color: var(--rag-green); }
+.rag-plan-title { margin: 0 0 6px; font: 700 18px/1.3 var(--font-heading); color: var(--text-light); }
+.rag-plan-sub, .rag-plan-end { font-size: 15px; line-height: 1.5; margin: 6px 0 10px; }
+.rag-plan-end { padding: 10px 12px; border-radius: 10px; background: rgba(0, 212, 255, .08); }
+.rag-plan-saved { font-size: 16px; font-weight: 700; margin: 6px 0; overflow-wrap: anywhere; }
+.rag-plan-chips { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.rag-plan-chip {
+  min-height: 44px; padding: 10px 12px; text-align: left; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-light); font: 15px/1.35 var(--font-body);
+}
+.rag-plan-input {
+  width: 100%; box-sizing: border-box; min-height: 88px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-light); font: 16px/1.4 var(--font-body);
+}
+.rag-plan-count { text-align: right; font-size: 13px; color: var(--text-muted); margin: 4px 0 8px; }
+.rag-plan-error { color: var(--rag-red); font-size: 14px; min-height: 0; }
+.rag-plan-error:empty { display: none; }
+.rag-plan-cards { margin: 0 0 8px 20px; padding: 0; }
+.rag-plan-cards li { margin: 4px 0; overflow-wrap: anywhere; }
+.rag-review-btn:focus-visible, .rag-plan-chip:focus-visible, .rag-plan-input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 400px) { .rag-review-btn { min-width: 0; font-size: 14px; } }
+
+/* 8.0.0: the 400px results pie no longer forces sideways scrolling on phones */
+.rag-chart-container canvas { max-width: 100%; height: auto; }

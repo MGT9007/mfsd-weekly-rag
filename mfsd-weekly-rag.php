@@ -2,14 +2,19 @@
 /**
  * Plugin Name: MFSD Weekly RAG + MBTI + DISC
  * Description: Weekly RAG (26) + MBTI (12) + DISC survey over 6 weeks with UM integration, AI summaries, and results storage.
- * Version: 7.4.0
+ * Version: 8.0.0
  * Author: MisterT9007
  */
 
 if (!defined('ABSPATH')) exit;
 
+require_once __DIR__ . '/includes/mfsd-shared-helpers.php';
+require_once __DIR__ . '/includes/class-mfsd-parent-tabs.php';
+
 final class MFSD_Weekly_RAG {
-    const VERSION = '7.4.0';
+    const VERSION = '8.0.0';
+    const SG_SOURCE = 'weekly_rag';   // safeguarding + commitments source_task
+    const STAGE_LABELS = array('not_started'=>'Not started','in_progress'=>'In progress','plan'=>"Choosing next week's plan",'completed'=>'Completed');
 
     /** Student-facing personality names (mirrors mfsd-personality-test). Codes are never given to the AI. */
     const PERSONALITY_NAMES = array(
@@ -55,7 +60,10 @@ final class MFSD_Weekly_RAG {
         add_shortcode('mfsd_rag',   array($this, 'shortcode'));
         add_action('rest_api_init', array($this, 'register_routes'));
         add_action('admin_menu',    array($this, 'admin_menu'));
-        add_action('admin_init',    array($this, 'maybe_upgrade_db'));
+        add_action('init',          array($this, 'maybe_upgrade_db'));
+        add_filter('mfsd_commitment_sources',   array($this, 'register_commitment_source'));
+        add_filter('mfsd_safeguarding_sources', array($this, 'register_safeguarding_source'));
+        add_action('mfsd_concern_flag_raised',  array($this, 'on_flag_raised'), 10, 3);
         add_action('admin_init',    array($this, 'save_admin_settings'));
         add_action('admin_init',    array($this, 'handle_question_actions'));
         add_filter('stevegpt_plugin_integration_slots', array($this, 'register_stevegpt_slots'));
@@ -137,8 +145,35 @@ final class MFSD_Weekly_RAG {
         ) $charset;");
     }
 
+    public function register_commitment_source($sources) {
+        $sources = is_array($sources) ? $sources : array();
+        if (!isset($sources[self::SG_SOURCE])) $sources[self::SG_SOURCE] = array('label' => 'Weekly RAG', 'kind' => 'Action', 'icon' => '🚦');
+        return $sources;
+    }
+
+    public function register_safeguarding_source($sources) {
+        $sources = is_array($sources) ? $sources : array();
+        $sources[self::SG_SOURCE] = 'Weekly RAG';
+        return $sources;
+    }
+
+    /** A new or released flag for this child: every cached weekly parent summary must rebuild. */
+    public function on_flag_raised($flag_id, $user_id = 0, $source = '') {
+        if (!in_array((string) $source, array(self::SG_SOURCE, 'commitments'), true) || !(int) $user_id) return;
+        global $wpdb; $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        if ($this->has_column($ws, 'parent_ai_summary')) {
+            $wpdb->query($wpdb->prepare("UPDATE $ws SET parent_ai_summary = NULL WHERE user_id = %d", (int) $user_id));
+        }
+    }
+
+    private function has_column($table, $col) {
+        global $wpdb;
+        return (bool) $wpdb->get_row("SHOW COLUMNS FROM $table LIKE '" . esc_sql($col) . "'", ARRAY_A);
+    }
+
+    /** Runs on every request until the stored DB version matches (front end included — spec §3). */
     public function maybe_upgrade_db() {
-        if (!is_admin()) return;
+        if (get_option('mfsd_rag_db_version', '') === self::VERSION) return;
         global $wpdb;
         $q  = $wpdb->prefix . self::TBL_QUESTIONS;
         $rp = $wpdb->prefix . self::TBL_RED_PLANS;
@@ -169,6 +204,25 @@ final class MFSD_Weekly_RAG {
               KEY idx_user_q (user_id, question_id)
             ) $charset;");
         }
+        // 8.0.0 (spec §3) — additive only.
+        $add = array(
+            $rp => array('commitment_id' => 'BIGINT UNSIGNED NULL'),
+            $wpdb->prefix . self::TBL_WEEK_SUMMARIES => array(
+                'disc_type'                => 'VARCHAR(4) NULL',
+                'steps_json'               => 'TEXT NULL',
+                'short_term_plan_text'     => 'VARCHAR(140) NULL',
+                'short_term_commitment_id' => 'BIGINT UNSIGNED NULL',
+                'short_term_saved_at'      => 'DATETIME NULL',
+                'parent_ai_summary'        => 'LONGTEXT NULL',
+            ),
+        );
+        foreach ($add as $table => $cols) {
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table'") !== $table) continue;
+            foreach ($cols as $col => $def) {
+                if (!$this->has_column($table, $col)) $wpdb->query("ALTER TABLE $table ADD COLUMN $col $def");
+            }
+        }
+        update_option('mfsd_rag_db_version', self::VERSION);
     }
 
     // =========================================================================
@@ -193,11 +247,11 @@ final class MFSD_Weekly_RAG {
 
     /**
      * Returns a human-readable age string for use in AI prompts.
-     * e.g. "aged 13" or falls back to "aged 11-14" if DOB not set.
+     * e.g. "aged 13" or falls back to "aged 10-14" if DOB not set.
      */
     private function get_age_description($user_id) {
         $age = $this->get_user_age($user_id);
-        return $age ? "aged $age" : "aged 11-14";
+        return $age ? "aged $age" : "aged 10-14";
     }
 
     /**
@@ -232,6 +286,16 @@ final class MFSD_Weekly_RAG {
             if (preg_match('/Week\s*([1-6])\s*RAG/i', $title, $m)) $week = (int)$m[1];
         }
 
+        // D9 (Mark): like every task, the RAG takes no free text while mfsd-safeguarding is inactive.
+        if (is_user_logged_in() && !function_exists('mfsd_safeguarding_check') && !MFSD_Parent_Tabs::is_parent_view()) {
+            return '<p style="text-align:center;padding:40px;color:#555;">Steve\'s having a quick break. Your answers are saved, so try again in a few minutes.</p>';
+        }
+
+        // ── Parent view (Course Progress) — skips the ordering gate, never writes (spec §10) ──
+        if (is_user_logged_in() && MFSD_Parent_Tabs::is_parent_view()) {
+            return $this->render_parent_view($week);
+        }
+
         // ── Ordering gate ──────────────────────────────────────────────────
         if ( function_exists( 'mfsd_get_task_status' ) && get_option( 'mfsd_rag_course_management', '1' ) === '1' ) {
             $student_id = get_current_user_id();
@@ -250,6 +314,8 @@ final class MFSD_Weekly_RAG {
         }
         // ── End ordering gate ──────────────────────────────────────────────
 
+        $commitments_on = $this->commitments_active();
+        if ($commitments_on && function_exists('mfsd_commitments_enqueue_modal')) mfsd_commitments_enqueue_modal();
         wp_localize_script('mfsd-weekly-rag', 'MFSD_RAG_CFG', array(
             'restUrlQuestions'      => esc_url_raw(rest_url('mfsd-rag/v1/questions')),
             'restUrlAnswer'         => esc_url_raw(rest_url('mfsd-rag/v1/answer')),
@@ -261,6 +327,9 @@ final class MFSD_Weekly_RAG {
             'restUrlQuestionChat'   => esc_url_raw(rest_url('mfsd-rag/v1/question-chat')),
             'restUrlRedSuggestions' => esc_url_raw(rest_url('mfsd-rag/v1/red-suggestions')),
             'restUrlSaveRedPlan'    => esc_url_raw(rest_url('mfsd-rag/v1/red-plan')),
+            'restUrlShortTerm'      => esc_url_raw(rest_url('mfsd-rag/v1/short-term-plan')),
+            'commitments'           => $commitments_on,
+            'shortTermMax'          => 140,
             'nonce'                 => wp_create_nonce('wp_rest'),
             'week'                  => $week,
             'ttsVoice'              => get_option('mfsd_rag_tts_voice', ''),
@@ -293,6 +362,8 @@ final class MFSD_Weekly_RAG {
             array('question-chat',     'CREATABLE', 'api_question_chat'),
             array('red-suggestions',   'CREATABLE', 'api_red_suggestions'),
             array('red-plan',          'CREATABLE', 'api_save_red_plan'),
+            array('short-term-plan',   'CREATABLE', 'api_short_term_plan'),
+            array('parent-summary',    'READABLE',  'api_parent_summary'),
         );
         foreach ($routes as $r) {
             register_rest_route('mfsd-rag/v1', '/' . $r[0], array(
@@ -318,6 +389,10 @@ final class MFSD_Weekly_RAG {
         if (in_array($request->get_method(), array('POST','PUT','DELETE'))) {
             $nonce = $request->get_header('X-WP-Nonce');
             if (!$nonce || !wp_verify_nonce($nonce, 'wp_rest')) return new WP_Error('rest_forbidden', __('Invalid security token.'), array('status' => 403));
+            // D9: no free text saved while mfsd-safeguarding is inactive (same rule as every task).
+            if (!function_exists('mfsd_safeguarding_check')) {
+                return new WP_Error('safeguarding_unavailable', "Steve's having a quick break. Your answers are saved, so try again in a few minutes.", array('status' => 503));
+            }
         }
         return true;
     }
@@ -390,6 +465,7 @@ final class MFSD_Weekly_RAG {
             }
         }
 
+        $stage = $this->week_stage($user_id, $week);
         $previous_week_summary=null; $intro_message=null;
         if ($week>1&&$status==='not_started') {
             $pw=$week-1; $a=$wpdb->prefix.self::TBL_ANSWERS_RAG;
@@ -397,7 +473,7 @@ final class MFSD_Weekly_RAG {
             $mbr=$wpdb->prefix.self::TBL_MB_RESULTS;
             $pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",$user_id,$pw));
             if ($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0)) {
-                $previous_week_summary=array('week'=>$pw,'reds'=>(int)$pr['reds'],'ambers'=>(int)$pr['ambers'],'greens'=>(int)$pr['greens'],'total_score'=>(int)$pr['total_score'],'mbti_type'=>$pm);
+                $previous_week_summary=array('week'=>$pw,'reds'=>(int)$pr['reds'],'ambers'=>(int)$pr['ambers'],'greens'=>(int)$pr['greens'],'total_score'=>(int)$pr['total_score']); // 8.0.0: no personality code to the browser
                 $username = function_exists('um_get_display_name') ? um_get_display_name($user_id) : get_userdata($user_id)->display_name;
                 $age_desc = $this->get_age_description($user_id);
                 $intro_prompt =
@@ -415,7 +491,7 @@ final class MFSD_Weekly_RAG {
                     'ambers'        => (int) $pr['ambers'],
                     'reds'          => (int) $pr['reds'],
                     'personality'   => $this->personality_label($pm),
-                ), $user_id) ?: null;
+                ), $user_id, $this->sg_ctx('summary', $user_id, array('field' => 'week_intro'))) ?: null;
             }
         }
 
@@ -428,8 +504,37 @@ final class MFSD_Weekly_RAG {
             'answered_question_ids'=>$answered_ids,
             'pending_red_plans'=>$pending_red_plans,
             'previous_week_summary'=>$previous_week_summary,
-            'intro_message'=>$intro_message
+            'intro_message'=>$intro_message,
+            'stage'=>$stage['stage'],
+            'stage_label'=>$stage['label'],
+            'short_term_plan'=>$stage['short_term_plan'],
         ),200);
+    }
+
+    /**
+     * Week stage for the student, Parent Portal and Course Progress (spec §6).
+     * not_started | in_progress | plan ("Choosing next week's plan") | completed.
+     */
+    public function week_stage($uid, $week) {
+        global $wpdb;
+        $uid = (int) $uid; $week = max(1, min(6, (int) $week));
+        $ws  = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d", $uid, $week), ARRAY_A);
+        $plan = ($row && !empty($row['short_term_saved_at'])) ? (string) $row['short_term_plan_text'] : null;
+        if ($plan !== null) {
+            $stage = 'completed';
+        } elseif ($row && !empty($row['ai_summary']) && !array_key_exists('steps_json', $row)) {
+            $stage = 'completed';                       // schema not upgraded yet: behave as 7.4.0
+        } elseif ($row && !empty($row['ai_summary']) && $row['steps_json'] === null) {
+            $stage = 'completed';                       // legacy: summary saved under 7.4.0, already completed
+        } else {
+            $count = $this->get_rag_answer_count($uid, $week) + $this->get_mbti_answer_count($uid, $week);
+            $expected = $this->get_expected_total_count($week);
+            if ($count === 0)                        $stage = 'not_started';
+            elseif ($expected > 0 && $count >= $expected) $stage = 'plan';
+            else                                     $stage = 'in_progress';
+        }
+        return array('stage' => $stage, 'label' => self::STAGE_LABELS[$stage], 'short_term_plan' => $plan);
     }
 
     private function get_rag_answer_count($u,$w)  { global $wpdb; $t=$wpdb->prefix.self::TBL_ANSWERS_RAG;  return (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $t WHERE user_id=%d AND week_num=%d",$u,$w)); }
@@ -506,7 +611,7 @@ final class MFSD_Weekly_RAG {
             'question_type'     => $question['q_type'],
             'previous_answers'  => trim($prev_text),
             'previous_red_plan' => $prev_red_plan ? $prev_red_plan['plan_text'] : '',
-        ), $uid);
+        ), $uid, $this->sg_ctx('item', $uid, array('item' => $question['q_text'], 'field' => 'guidance', 'source_ref' => 'rag:' . (int) $week . ':q' . (int) $qid)));
 
         return new WP_REST_Response(array('ok'=>true,'guidance'=>$guidance,'question'=>$question['q_text'],'type'=>$question['q_type']),200);
     }
@@ -517,7 +622,7 @@ final class MFSD_Weekly_RAG {
         $all=array(); $a=$wpdb->prefix.self::TBL_ANSWERS_RAG; $mbr=$wpdb->prefix.self::TBL_MB_RESULTS; $ws=$wpdb->prefix.self::TBL_WEEK_SUMMARIES;
         for ($w=1;$w<=6;$w++) {
             $exists=$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $ws WHERE user_id=%d AND week_num=%d",$uid,$w));
-            if ($exists>0) { $rs=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A); $mt=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM $mbr WHERE user_id=%d AND week_num=%d",$uid,$w)); $all[$w]=array('week'=>$w,'rag'=>$rs,'mbti'=>$mt?:null,'completed'=>true); }
+            if ($exists>0) { $rs=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A); $all[$w]=array('week'=>$w,'rag'=>$rs,'completed'=>true); } // 8.0.0: no personality code to the browser
             else $all[$w]=array('week'=>$w,'completed'=>false);
         }
         return new WP_REST_Response(array('ok'=>true,'weeks'=>$all),200);
@@ -606,7 +711,7 @@ final class MFSD_Weekly_RAG {
             'question_text'  => $question['q_text'],
             'last_plan'      => $last_plan_text,
             'previous_answer'=> (string) $prev_answer,
-        ), $user_id);
+        ), $user_id, $this->sg_ctx('suggestion', $user_id, array('item' => $question['q_text'], 'field' => 'red_suggestions', 'source_ref' => 'rag:' . $week . ':q' . $question_id)));
         foreach (explode("\n",$response) as $line) {
             $line = trim($line);
             if (strpos($line,'INTRO:')===0) $steve_intro = trim(substr($line,6));
@@ -625,10 +730,88 @@ final class MFSD_Weekly_RAG {
         $plan_text   = sanitize_textarea_field($req->get_param('plan_text'));
         $user_id     = $this->get_current_um_user_id();
         if (!$user_id||!$question_id||!$plan_text) return new WP_REST_Response(array('ok'=>false,'error'=>'Invalid request'),400);
-        $word_count = str_word_count(strip_tags($plan_text));
+        $word_count = self::word_count(strip_tags($plan_text));
         $rp=$wpdb->prefix.self::TBL_RED_PLANS;
-        $wpdb->replace($rp,array('user_id'=>$user_id,'week_num'=>$week,'question_id'=>$question_id,'plan_text'=>$plan_text,'word_count'=>$word_count),array('%d','%d','%d','%s','%d'));
-        return new WP_REST_Response(array('ok'=>true,'word_count'=>$word_count),200);
+        $existing = $wpdb->get_var($wpdb->prepare("SELECT id FROM $rp WHERE user_id=%d AND week_num=%d AND question_id=%d", $user_id, $week, $question_id));
+        if ($existing) $wpdb->update($rp, array('plan_text'=>$plan_text,'word_count'=>$word_count), array('id'=>(int)$existing));
+        else $wpdb->insert($rp, array('user_id'=>$user_id,'week_num'=>$week,'question_id'=>$question_id,'plan_text'=>$plan_text,'word_count'=>$word_count), array('%d','%d','%d','%s','%d'));
+
+        $ref = 'rag:' . $week . ':q' . $question_id;
+        $qt  = $wpdb->prefix . self::TBL_QUESTIONS;
+        $q_text = (string) $wpdb->get_var($wpdb->prepare("SELECT q_text FROM $qt WHERE id=%d", $question_id));
+
+        // Safeguarding keyword check on save (Prompt Layer §7; spec §8.1). The child sees no difference.
+        // D4 (Mark's decision 2): when mfsd-commitments is active it checks the card text itself
+        // (source 'commitments'); the RAG only checks the plan when commitments is off. One flag, not two.
+        if (function_exists('mfsd_safeguarding_check') && !$this->commitments_active()) {
+            mfsd_safeguarding_check($user_id, self::SG_SOURCE, 'Week ' . $week . ' Red Plan: ' . $this->short($q_text, 120), $plan_text,
+                array('field' => 'red_plan', 'source_ref' => $ref));
+        }
+
+        // Commitment card (Commitments §4.2 / §13.1). Never blocks the save.
+        $commitment_id = null;
+        if (function_exists('mfsd_create_commitment')) {
+            $cid = mfsd_create_commitment($user_id, array(
+                'type'        => 'action',
+                'source_task' => self::SG_SOURCE,
+                'source_ref'  => $ref,
+                'title'       => $this->red_plan_title($plan_text, $q_text, $user_id, $ref),
+                'detail'      => $plan_text,
+            ));
+            if (is_wp_error($cid)) {
+                error_log('[MFSD RAG] commitment create failed (' . $ref . '): ' . $cid->get_error_message());
+                // No card means Commitments never checked the words, so check them here (review).
+                if (function_exists('mfsd_safeguarding_check')) {
+                    mfsd_safeguarding_check($user_id, self::SG_SOURCE, 'Week ' . $week . ' Red Plan: ' . $this->short($q_text, 120), $plan_text,
+                        array('field' => 'red_plan', 'source_ref' => $ref));
+                }
+            } elseif ($cid) {
+                $commitment_id = (int) $cid;
+                $wpdb->update($rp, array('commitment_id' => $commitment_id), array('user_id'=>$user_id,'week_num'=>$week,'question_id'=>$question_id));
+            }
+        }
+        $this->clear_parent_summary($user_id, $week);
+        return new WP_REST_Response(array('ok'=>true,'word_count'=>$word_count,'commitment_id'=>$commitment_id),200);
+    }
+
+    /** Card title (spec §4): first sentence ≤140 chars → red_plan_title slot → first 137 chars + "…". */
+    private function red_plan_title($plan, $q_text, $uid, $ref) {
+        $plan  = trim(preg_replace('/\s+/', ' ', (string) $plan));
+        $first = preg_split('/(?<=[.!?])\s+/', $plan, 2)[0];
+        if ($first !== '' && mb_strlen($first) <= 140) return $first;
+        $t = $this->steve_task('red_plan_title',
+            "Turn this student's plan into a short card title they will recognise as their own words: max 12 words, no quotes, no emoji, starts with a verb.\nQuestion: \"$q_text\"\nPlan: \"$plan\"\nReply with the title only.",
+            array('question_text' => $q_text, 'plan_text' => $plan), (int) $uid,
+            $this->sg_ctx('suggestion', $uid, array('item' => 'Red Plan title', 'field' => 'red_plan_title', 'source_ref' => $ref)));
+        $t = trim(str_replace(array('"', '“', '”'), '', strtok(trim($t), "\n") ?: ''));
+        if ($t !== '' && mb_strlen($t) <= 140) return $t;
+        return mb_substr($plan, 0, 137) . '…';
+    }
+
+    /** Words = whitespace-separated tokens, so "5 mins" and "Year 7" count (str_word_count ignores digits). Matches the JS count. */
+    private static function word_count($text) {
+        return count(preg_split('/\s+/u', trim((string) $text), -1, PREG_SPLIT_NO_EMPTY));
+    }
+
+    private function short($text, $len) {
+        $text = trim((string) $text);
+        return mb_strlen($text) > $len ? mb_substr($text, 0, $len - 1) . '…' : $text;
+    }
+
+    private function commitments_active() {
+        return function_exists('mfsd_create_commitment') && function_exists('mfsd_get_open_commitments');
+    }
+
+    private function clear_parent_summary($uid, $week) {
+        global $wpdb; $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        if ($this->has_column($ws, 'parent_ai_summary')) {
+            $wpdb->query($wpdb->prepare("UPDATE $ws SET parent_ai_summary = NULL WHERE user_id=%d AND week_num=%d", (int) $uid, (int) $week));
+        }
+    }
+
+    /** Safeguarding context for SteveGPT_Chatbot::query() (Prompt Layer §3.2). user_id is always the CHILD. */
+    private function sg_ctx($kind, $child_id, array $extra = array()) {
+        return array_merge(array('kind' => $kind, 'source_task' => self::SG_SOURCE, 'user_id' => (int) $child_id), $extra);
     }
 
     public function api_question_chat($req) {
@@ -670,7 +853,7 @@ final class MFSD_Weekly_RAG {
             'question_type'    => $q['q_type'],
             'previous_answers' => trim($prev_text),
             'message'          => $msg,
-        ), $uid);
+        ), $uid, $this->sg_ctx('chat', $uid, array('item' => $q['q_text'], 'item_text' => $msg, 'field' => $is_red_followup ? 'red_chat' : 'question_chat', 'source_ref' => 'rag:' . $week . ':q' . $question_id)));
         if ($resp === '') $resp = "I'm having trouble connecting right now. Please try again.";
 
         return new WP_REST_Response(array('ok'=>true,'response'=>$resp),200);
@@ -678,29 +861,32 @@ final class MFSD_Weekly_RAG {
 
     public function api_summary($req) {
         global $wpdb;
-        $week=$week=max(1,min(6,(int)$req->get_param('week'))); $uid=$this->get_current_um_user_id();
+        $week=max(1,min(6,(int)$req->get_param('week'))); $uid=$this->get_current_um_user_id();
         if (!$uid) return new WP_REST_Response(array('ok'=>false,'error'=>'Not logged in'),403);
 
         $ws=$wpdb->prefix.self::TBL_WEEK_SUMMARIES; $cached=$wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A); $use_cache=(get_option('mfsd_rag_cache_summaries','1')==='1');
+        $a=$wpdb->prefix.self::TBL_ANSWERS_RAG;
+        $pw=array(); if($week>1){for($w=1;$w<$week;$w++){$pr=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A);$pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",$uid,$w));if($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0))$pw[]=array('week'=>$w,'rag'=>$pr,'mbti'=>$pm);}}
+        // 8.0.0: personality codes never reach the browser.
+        $pw_out = array_map(function ($x) { unset($x['mbti']); return $x; }, $pw);
+
         if ($use_cache&&$cached&&!empty($cached['ai_summary'])) {
-            $pw=array(); if($week>1){$a=$wpdb->prefix.self::TBL_ANSWERS_RAG;for($w=1;$w<$week;$w++){$pr=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A);$pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",$uid,$w));if($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0))$pw[]=array('week'=>$w,'rag'=>$pr,'mbti'=>$pm);}}
-            return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>array('reds'=>(int)$cached['reds'],'ambers'=>(int)$cached['ambers'],'greens'=>(int)$cached['greens'],'total_score'=>(int)$cached['total_score']),'mbti'=>$cached['mbti_type'],'disc_type'=>isset($cached['disc_type'])?$cached['disc_type']:null,'disc_scores'=>null,'ai'=>$cached['ai_summary'],'previous_weeks'=>$pw,'cached'=>true),200);
+            return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>array('reds'=>(int)$cached['reds'],'ambers'=>(int)$cached['ambers'],'greens'=>(int)$cached['greens'],'total_score'=>(int)$cached['total_score']),'ai'=>$cached['ai_summary'],'previous_weeks'=>$pw_out,'cached'=>true) + $this->plan_payload($uid,$week,$cached),200);
         }
 
-        $a=$wpdb->prefix.self::TBL_ANSWERS_RAG; $agg=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A);
+        $agg=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A);
         if (!$agg) $agg=array('reds'=>0,'ambers'=>0,'greens'=>0,'total_score'=>0);
         $mb=$wpdb->prefix.self::TBL_ANSWERS_MB; $letters=$wpdb->get_results($wpdb->prepare("SELECT axis,letter,COUNT(*) c FROM $mb WHERE user_id=%d AND week_num=%d GROUP BY axis,letter",$uid,$week),ARRAY_A); $type=$this->mbti_type_from_counts($letters);
         if ($type){$mbr=$wpdb->prefix.self::TBL_MB_RESULTS;$wpdb->replace($mbr,array('user_id'=>$uid,'week_num'=>$week,'type4'=>$type,'details'=>wp_json_encode($letters)),array('%d','%d','%s','%s'));}
         $disc_type=$disc_scores=null; if($this->get_expected_disc_count($week)>0){$dr=$this->calculate_disc_results($uid,$week);if($dr){$disc_type=$dr['disc_type'];$disc_scores=$dr['disc_scores'];}}
-        $pw=array(); if($week>1){for($w=1;$w<$week;$w++){$pr=$wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') AS reds,SUM(answer='A') AS ambers,SUM(answer='G') AS greens,SUM(score) AS total_score FROM $a WHERE user_id=%d AND week_num=%d",$uid,$w),ARRAY_A);$pm=$wpdb->get_var($wpdb->prepare("SELECT type4 FROM {$wpdb->prefix}mfsd_mbti_results WHERE user_id=%d AND week_num=%d",$uid,$w));if($pr&&($pr['reds']>0||$pr['ambers']>0||$pr['greens']>0))$pw[]=array('week'=>$w,'rag'=>$pr,'mbti'=>$pm);}}
         $mtu=$type; if(!$mtu&&!empty($pw)){foreach(array_reverse($pw) as $p){if(!empty($p['mbti'])){$mtu=$p['mbti'];break;}}}
-        $djr=null; $djt=$wpdb->prefix.'mfsd_ai_dream_jobs_results'; if($wpdb->get_var("SHOW TABLES LIKE '$djt'")==$djt){$djd=$wpdb->get_row($wpdb->prepare("SELECT ranking_json FROM $djt WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1",$uid),ARRAY_A);if($djd&&!empty($djd['ranking_json']))$djr=json_decode($djd['ranking_json'],true);}
+        $djr=$this->dream_jobs($uid);
 
-        // Red plan follow-up context
+        // Red plan follow-up context (8.0.0: with the card's status when there is one)
         $plan_context = '';
         if ($week > 1) {
             $rp=$wpdb->prefix.self::TBL_RED_PLANS;
-            $prev_week_plans=$wpdb->get_results($wpdb->prepare("SELECT rp.question_id,rp.plan_text,rp.week_num,q.q_text FROM $rp rp JOIN {$wpdb->prefix}".self::TBL_QUESTIONS." q ON q.id=rp.question_id WHERE rp.user_id=%d AND rp.week_num=%d",$uid,$week-1),ARRAY_A);
+            $prev_week_plans=$wpdb->get_results($wpdb->prepare("SELECT rp.*,q.q_text FROM $rp rp JOIN {$wpdb->prefix}".self::TBL_QUESTIONS." q ON q.id=rp.question_id WHERE rp.user_id=%d AND rp.week_num=%d",$uid,$week-1),ARRAY_A);
             if (!empty($prev_week_plans)) {
                 $plan_context="\n===RED PLAN FOLLOW-UP===\nLast week the student made improvement plans for Red questions:\n\n";
                 foreach ($prev_week_plans as $plan) {
@@ -709,11 +895,13 @@ final class MFSD_Weekly_RAG {
                     if ($twa==='G') $outcome='improved to GREEN — great success!';
                     elseif ($twa==='A') $outcome='improved to AMBER — good progress!';
                     elseif ($twa==='R') $outcome='still Red — plan needs revisiting';
-                    $plan_context.="Question: \"{$plan['q_text']}\"\nPlan: \"{$plan['plan_text']}\"\nThis week: $outcome\n\n";
+                    $card_line = $this->card_status_line(isset($plan['commitment_id']) ? (int)$plan['commitment_id'] : 0, $uid);
+                    $plan_context.="Question: \"{$plan['q_text']}\"\nPlan: \"{$plan['plan_text']}\"\nThis week: $outcome\n".($card_line!==''?"Card: $card_line\n":'')."\n";
                 }
                 $plan_context.="Celebrate Red→Green warmly, for Red→Amber ask what worked, for Red→Red ask what got in the way and encourage them.\n";
             }
         }
+        $commitments_block = $this->commitments_block($uid, $week, false);
 
         $aiIntro='';
         $username = function_exists('um_get_display_name') ? um_get_display_name($uid) : get_userdata($uid)->display_name;
@@ -729,6 +917,7 @@ final class MFSD_Weekly_RAG {
         if (!empty($pw)){$p.="\nPROGRESS:\n";foreach($pw as $wpw)$p.="Week{$wpw['week']}: {$wpw['rag']['reds']}R/{$wpw['rag']['ambers']}A/{$wpw['rag']['greens']}G".($this->personality_label($wpw['mbti']) ? " Personality: " . $this->personality_label($wpw['mbti']) : "")."\n";}
         if (!empty($djr)){$p.="\nDREAM JOBS:\n";foreach(array_slice($djr,0,5) as $i=>$j)$p.=($i+1).". $j\n";}
         $p .= $plan_context;
+        $p .= $commitments_block;
         $p .= "Write a warm, insightful summary: celebrate strengths, note progress, reflect on their personality type and communication style (by name only), acknowledge development areas, give 2-3 actionable steps.\n";
         $p .= "UK context. Bullet points. Apply Steve's Solutions Mindset: No Failure only Feedback; Smooth sea never made a skilled sailor; You never lose you win or learn.\n";
         $aiIntro = $this->steve_task('summary', $p, array(
@@ -743,17 +932,386 @@ final class MFSD_Weekly_RAG {
             'communication_style' => $comm_style,
             'dream_jobs'   => !empty($djr) ? implode(', ', array_slice($djr, 0, 5)) : '',
             'plan_context' => $plan_context,
-        ), $uid);
+            'commitments'  => $commitments_block,
+        ), $uid, $this->sg_ctx('summary', $uid, array('field' => 'week_summary')), self::STEP_RULE);
 
-        if (!empty($aiIntro)){$wpdb->replace($ws,array('user_id'=>$uid,'week_num'=>$week,'reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'ai_summary'=>$aiIntro),array('%d','%d','%d','%d','%d','%d','%s','%s','%s'));
-
-            // ── Ordering: mark completed when summary saved ────────────────
-            if ( function_exists( 'mfsd_set_task_status' ) && get_option( 'mfsd_rag_course_management', '1' ) === '1' ) {
-                mfsd_set_task_status( $uid, 'rag_week_' . $week, 'completed' );
-            }
-            // ──────────────────────────────────────────────────────────────
+        $steps = $this->extract_steps($aiIntro);
+        $row = $cached;
+        if (!empty($aiIntro)) {
+            // 8.0.0: update-or-insert, never replace() — replace() would wipe the saved plan (spec §3).
+            $this->upsert_summary($uid, $week, array('reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'ai_summary'=>$aiIntro,'steps_json'=>wp_json_encode($steps),'parent_ai_summary'=>null));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A);
+            // Task completion moved to the plan step (api_short_term_plan, spec §5).
+        } elseif (!$cached) {
+            // Steve unavailable: keep the counts so the plan step can still be completed (no AI text cached).
+            $this->upsert_summary($uid, $week, array('reds'=>(int)$agg['reds'],'ambers'=>(int)$agg['ambers'],'greens'=>(int)$agg['greens'],'total_score'=>(int)$agg['total_score'],'mbti_type'=>$type,'disc_type'=>$disc_type,'steps_json'=>'[]'));
+            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d",$uid,$week),ARRAY_A);
         }
-        return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>$agg,'mbti'=>$type,'disc_type'=>$disc_type,'disc_scores'=>$disc_scores,'ai'=>$aiIntro,'previous_weeks'=>$pw,'cached'=>false),200);
+        return new WP_REST_Response(array('ok'=>true,'week'=>$week,'rag'=>$agg,'ai'=>$aiIntro,'previous_weeks'=>$pw_out,'cached'=>false) + $this->plan_payload($uid,$week,$row ?: array('steps_json'=>wp_json_encode($steps))),200);
+    }
+
+    const STEP_RULE = "Finish with 2-3 lines, each starting STEP:, each one small specific thing they could do next week (max 15 words each). Put nothing after the STEP: lines.";
+
+    /** Pulls STEP: lines out of the summary text (by reference). Max 3. */
+    private function extract_steps(&$text) {
+        $steps = array();
+        if (preg_match_all('/^\s*(?:[-•*]\s*)?\**STEP\**\s*:\**\s*(.+)$/miu', (string) $text, $m)) {
+            foreach ($m[1] as $st) { $st = trim($st, " \t*\"“”"); if ($st !== '' && count($steps) < 3) $steps[] = mb_substr($st, 0, 140); }
+        }
+        $text = trim(preg_replace('/^\s*(?:[-•*]\s*)?\**STEP\**\s*:.*$\n?/miu', '', (string) $text));
+        return $steps;
+    }
+
+    private function upsert_summary($uid, $week, array $data) {
+        global $wpdb; $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        foreach (array('disc_type','steps_json','parent_ai_summary') as $c) { if (array_key_exists($c, $data) && !$this->has_column($ws, $c)) unset($data[$c]); }
+        $id = $wpdb->get_var($wpdb->prepare("SELECT id FROM $ws WHERE user_id=%d AND week_num=%d", (int) $uid, (int) $week));
+        if ($id) return $wpdb->update($ws, $data, array('id' => (int) $id));
+        return $wpdb->insert($ws, array('user_id' => (int) $uid, 'week_num' => (int) $week) + $data);
+    }
+
+    /** Plan-step fields shared by the fresh and cached summary responses. */
+    private function plan_payload($uid, $week, $row) {
+        $steps = array();
+        if (!empty($row['steps_json'])) { $d = json_decode($row['steps_json'], true); if (is_array($d)) $steps = array_values($d); }
+        $stage = $this->week_stage($uid, $week);
+        return array(
+            'steps'           => $steps,
+            'short_term_plan' => !empty($row['short_term_saved_at']) ? (string) $row['short_term_plan_text'] : null,
+            'stage'           => $stage['stage'],
+            'stage_label'     => $stage['label'],
+        );
+    }
+
+    /** Top dream jobs: Dream & Junk Jobs getter (DJJ §4.4), else the 7.4.0 table read. */
+    private function dream_jobs($uid) {
+        if (function_exists('mfsd_get_dream_junk_jobs')) {
+            $d = mfsd_get_dream_junk_jobs((int) $uid);
+            if (is_array($d) && !empty($d['dream_ranked'])) return array_values(array_slice((array) $d['dream_ranked'], 0, 5));
+        }
+        global $wpdb; $djt=$wpdb->prefix.'mfsd_ai_dream_jobs_results';
+        if ($wpdb->get_var("SHOW TABLES LIKE '$djt'")==$djt) {
+            $djd=$wpdb->get_row($wpdb->prepare("SELECT ranking_json FROM $djt WHERE user_id=%d ORDER BY updated_at DESC LIMIT 1",$uid),ARRAY_A);
+            if ($djd&&!empty($djd['ranking_json'])) { $r = json_decode($djd['ranking_json'],true); if (is_array($r)) return $r; }
+        }
+        return null;
+    }
+
+    /** "checked in — waiting for parent" etc. for the plan follow-up lines; '' when no card. */
+    private function card_status_line($cid, $uid) {
+        if (!$cid || !function_exists('mfsd_get_commitments')) return '';
+        foreach (mfsd_get_commitments((int) $uid) as $c) {
+            if ((int) $c['id'] !== (int) $cid) continue;
+            $map = array('open'=>'still open','carried'=>'carried forward','not_yet'=>'not started yet','checked_in'=>'checked in — waiting for their parent to see it','validated'=>'done and seen by their parent','dropped'=>'dropped','expired'=>'expired');
+            return $map[$c['status']] ?? (string) $c['status'];
+        }
+        return '';
+    }
+
+    /**
+     * === COMMITMENTS THIS WEEK === block (Commitments §13.2). Child's words only, no personality data.
+     * "Waiting for validation" is parent-only. Returns '' when commitments is inactive or there's nothing to say.
+     */
+    private function commitments_block($uid, $week, $for_parent) {
+        if (!function_exists('mfsd_get_commitments_for_summary')) return '';
+        // B2 (review): the parent summary is cached per child and shown to every linked parent, so it uses
+        // the parent-safe feed — no card a parent hasn't unlocked yet (Commitments 2.0.0).
+        if ($for_parent && !function_exists('mfsd_get_commitments_for_parent_summary')) return '';
+        $f = $for_parent ? mfsd_get_commitments_for_parent_summary((int) $uid, (int) $week, 0) : mfsd_get_commitments_for_summary((int) $uid, (int) $week);
+        $line = function ($c) { return '"' . $c['title'] . '"' . (!empty($c['label']) ? ' (' . $c['label'] . ')' : ''); };
+        $out = '';
+        if (!empty($f['created'])) {
+            $out .= "Cards created this week:\n";
+            foreach ($f['created'] as $src => $cards) foreach ((array) $cards as $c) $out .= '- ' . $line($c) . "\n";
+        }
+        if (!empty($f['reviewed'])) {
+            $names = array('carry' => 'started / keeping it going', 'not_yet' => 'not yet', 'drop' => 'dropped');
+            $out .= "Reviewed this week:\n";
+            foreach ($f['reviewed'] as $c) $out .= '- ' . $line($c) . ': ' . ($names[$c['outcome']] ?? $c['outcome']) . "\n";
+        }
+        if (!empty($f['validated'])) {
+            $out .= "Done and seen by a parent:\n";
+            foreach ($f['validated'] as $c) $out .= '- ' . $line($c) . (!empty($c['auto']) ? ' (confirmed automatically)' : '') . "\n";
+        }
+        if ($for_parent && !empty($f['waiting'])) {
+            $out .= "Waiting for the parent to see (checked in by the child):\n";
+            foreach ($f['waiting'] as $c) $out .= '- ' . $line($c) . "\n";
+        }
+        if (!empty($f['red_repeat'])) {
+            $out .= "Red again (handle with care, Solutions Mindset):\n";
+            foreach ($f['red_repeat'] as $c) $out .= '- ' . $line($c) . ': red ' . (int) $c['weeks_running'] . " weeks running\n";
+        }
+        if ($out === '') return '';
+        $how = $for_parent
+            ? "Explain each in plain words, how the parent can help, and that they can mark a card as seen once their child has done it."
+            : "Reflect these back warmly (e.g. \"This week you set three small steps…\"); celebrate what was done.";
+        return "\n=== COMMITMENTS THIS WEEK ===\n" . $out . $how . "\n";
+    }
+
+    // =========================================================================
+    // 8.0.0 — PLAN FOR NEXT WEEK (spec §5)
+    // =========================================================================
+
+    public function api_short_term_plan($req) {
+        global $wpdb;
+        $week = max(1, min(6, (int) $req->get_param('week')));
+        $uid  = $this->get_current_um_user_id();
+        $text = trim(preg_replace('/\s+/', ' ', sanitize_text_field((string) $req->get_param('plan_text'))));
+        if (!$uid) return new WP_REST_Response(array('ok'=>false,'error'=>'Not logged in'),403);
+        if ($text === '' || self::word_count($text) < 3) return new WP_REST_Response(array('ok'=>false,'error'=>'Write a few words about your plan.'),400);
+        $text = mb_substr($text, 0, 140);
+
+        $ws  = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d", $uid, $week), ARRAY_A);
+        if (!$row) return new WP_REST_Response(array('ok'=>false,'error'=>'Finish this week\'s questions first.'),409);
+
+        $ref = 'rag:' . $week . ':short_term';
+        if (function_exists('mfsd_safeguarding_check') && !$this->commitments_active()) { // D4: see Red Plan save
+            mfsd_safeguarding_check($uid, self::SG_SOURCE, 'Week ' . $week . ' plan for next week', $text, array('field' => 'short_term', 'source_ref' => $ref));
+        }
+
+        $cid = !empty($row['short_term_commitment_id']) ? (int) $row['short_term_commitment_id'] : null;
+        if (function_exists('mfsd_create_commitment')) {
+            $res = mfsd_create_commitment($uid, array('type' => 'action', 'source_task' => self::SG_SOURCE, 'source_ref' => $ref, 'title' => $text, 'detail' => ''));
+            if (is_wp_error($res)) {
+                error_log('[MFSD RAG] short-term card failed (' . $ref . '): ' . $res->get_error_message());
+                if (function_exists('mfsd_safeguarding_check')) { // no card, so Commitments never checked it (review)
+                    mfsd_safeguarding_check($uid, self::SG_SOURCE, 'Week ' . $week . ' plan for next week', $text, array('field' => 'short_term', 'source_ref' => $ref));
+                }
+            } elseif ($res) $cid = (int) $res;
+        }
+
+        $wpdb->update($ws, array(
+            'short_term_plan_text'     => $text,
+            'short_term_commitment_id' => $cid,
+            'short_term_saved_at'      => current_time('mysql'),
+            'parent_ai_summary'        => null,
+        ), array('id' => (int) $row['id']));
+
+        // ── Ordering: the week is complete once the plan is saved (moved from the summary) ──
+        if (function_exists('mfsd_set_task_status') && get_option('mfsd_rag_course_management', '1') === '1') {
+            mfsd_set_task_status($uid, 'rag_week_' . $week, 'completed');
+        }
+
+        // End-of-course note, shown once (spec §9).
+        $last = (int) get_option('mfsd_commitments_last_course_week', 3);
+        $course_end = false;
+        if ($this->commitments_active() && $week === $last && !get_user_meta($uid, 'mfsd_rag_course_end_seen', true)) {
+            update_user_meta($uid, 'mfsd_rag_course_end_seen', current_time('mysql'));
+            $course_end = true;
+        }
+
+        return new WP_REST_Response(array(
+            'ok'              => true,
+            'commitment_id'   => $cid,
+            'short_term_plan' => $text,
+            'cards'           => $this->week_cards($uid, $week),
+            'parent_name'     => $this->parent_name($uid),
+            'course_end'      => $course_end,
+            'stage'           => 'completed',
+            'stage_label'     => self::STAGE_LABELS['completed'],
+        ), 200);
+    }
+
+    /** The cards this week's RAG created (red plans + short-term), for the end screen. */
+    private function week_cards($uid, $week) {
+        if (!function_exists('mfsd_get_open_commitments')) return array();
+        $out = array();
+        foreach (mfsd_get_open_commitments((int) $uid, array('source_task' => self::SG_SOURCE)) as $c) {
+            if (strpos((string) $c['source_ref'], 'rag:' . (int) $week . ':') !== 0) continue;
+            $out[] = array('id' => (int) $c['id'], 'title' => (string) $c['title'], 'short_term' => substr((string) $c['source_ref'], -11) === ':short_term');
+        }
+        return $out;
+    }
+
+    private function parent_name($uid) {
+        if (class_exists('MFSD_MC_Store') && method_exists('MFSD_MC_Store', 'parent_label')) return (string) MFSD_MC_Store::parent_label((int) $uid);
+        return 'your parent';
+    }
+
+    // =========================================================================
+    // 8.0.0 — PARENT VIEW (spec §10)
+    // =========================================================================
+
+    private function render_parent_view($week) {
+        $viewer = (int) get_current_user_id();
+        $sid    = MFSD_Parent_Tabs::requested_student_id();
+        if (!$sid) return '<p style="text-align:center;padding:40px;color:#555;">Open this week from your child\'s Course Progress page to see their results.</p>';
+        if (is_wp_error(MFSD_Parent_Tabs::assert_linked($viewer, $sid))) {
+            return '<p style="text-align:center;padding:40px;color:#555;">You don\'t have access to this student\'s results.</p>';
+        }
+        $child = MFSD_Parent_Tabs::child_first_name($sid);
+        $root  = 'mfsd-rag-parent-' . (int) $sid . '-' . (int) $week;
+        $url   = add_query_arg(array('week' => (int) $week, 'student_id' => (int) $sid), rest_url('mfsd-rag/v1/parent-summary'));
+        $parent_html = '<div class="mfsd-pt__loading" id="' . esc_attr($root) . '">Steve is preparing your parent summary…</div>'
+            . '<script>(function(){var el=document.getElementById(' . wp_json_encode($root) . ');if(!el)return;'
+            . 'fetch(' . wp_json_encode(esc_url_raw($url)) . ',{credentials:"same-origin",headers:{"X-WP-Nonce":' . wp_json_encode(wp_create_nonce('wp_rest')) . '}})'
+            . '.then(function(r){return r.json();}).then(function(d){el.outerHTML=(d&&d.html)?d.html:"<p>Steve\'s parent summary isn\'t available right now. Please try again in a few minutes.</p>";})'
+            . '.catch(function(){el.textContent="Steve\'s parent summary isn\'t available right now. Please try again in a few minutes.";});})();</script>';
+        return MFSD_Parent_Tabs::render_tabs($this->parent_child_view_html($sid, $week, $child), $parent_html, !empty($this->parent_flags($sid)), $child);
+    }
+
+    /** Parent-visible open flags: this task, plus the commitments "several Red Plans" signal (spec §10, D5). */
+    private function parent_flags($sid) {
+        $flags = $this->open_flags($sid, self::SG_SOURCE);
+        $cards = array_flip(array_map('strval', $this->rag_card_ids($sid)));
+        foreach ($this->open_flags($sid, 'commitments') as $f) {
+            // The several-Red-Plans signal, plus any flag Commitments raised on one of this child's RAG cards (D4).
+            if (($f['trigger_type'] ?? '') === 'signal' || isset($cards[(string) ($f['source_ref'] ?? '')])) $flags[] = $f;
+        }
+        return $flags;
+    }
+
+    /**
+     * B3 (review): parent-visible flags that are NOT CLOSED (open, seen or talked). mfsd_get_concern_flags(…, true)
+     * means status 'open' only, so a flag dropped out once a parent marked it seen. Unreleased moderation excluded.
+     */
+    private function open_flags($sid, $task) {
+        if (function_exists('mfsd_get_open_concern_flags')) return mfsd_get_open_concern_flags((int) $sid, (string) $task);
+        if (!function_exists('mfsd_get_concern_flags')) return array();
+        return array_values(array_filter(mfsd_get_concern_flags((int) $sid, (string) $task), function ($f) { return ($f['status'] ?? 'open') !== 'closed'; }));
+    }
+
+    /** Commitment ids of this child's RAG cards (Red Plans + plans for next week). */
+    private function rag_card_ids($sid) {
+        global $wpdb;
+        $rp = $wpdb->prefix . self::TBL_RED_PLANS; $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $a = $wpdb->get_col($wpdb->prepare("SELECT commitment_id FROM $rp WHERE user_id=%d AND commitment_id IS NOT NULL", $sid)) ?: array();
+        $b = $wpdb->get_col($wpdb->prepare("SELECT short_term_commitment_id FROM $ws WHERE user_id=%d AND short_term_commitment_id IS NOT NULL", $sid)) ?: array();
+        return array_values(array_filter(array_map('intval', array_merge($a, $b))));
+    }
+
+    private function withheld($sid, $ref, $commitment_id = 0) {
+        if (!function_exists('mfsd_safeguarding_is_withheld')) return false;
+        if (mfsd_safeguarding_is_withheld((int) $sid, self::SG_SOURCE, (string) $ref)) return true;
+        // D4: when Commitments checked the text, a held card is keyed by its commitment id.
+        return $commitment_id && mfsd_safeguarding_is_withheld((int) $sid, 'commitments', (string) (int) $commitment_id);
+    }
+
+    /** Red plans + short-term plan for the parent, withheld items marked (spec §8.3). */
+    private function parent_week_items($sid, $week) {
+        global $wpdb;
+        $rp = $wpdb->prefix . self::TBL_RED_PLANS; $qt = $wpdb->prefix . self::TBL_QUESTIONS; $ws = $wpdb->prefix . self::TBL_WEEK_SUMMARIES;
+        $plans = $wpdb->get_results($wpdb->prepare("SELECT rp.question_id, rp.plan_text, rp.commitment_id, q.q_text FROM $rp rp LEFT JOIN $qt q ON q.id = rp.question_id WHERE rp.user_id=%d AND rp.week_num=%d ORDER BY rp.id ASC", $sid, $week), ARRAY_A) ?: array();
+        foreach ($plans as &$p) $p['withheld'] = $this->withheld($sid, 'rag:' . $week . ':q' . (int) $p['question_id'], (int) $p['commitment_id']);
+        unset($p);
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $ws WHERE user_id=%d AND week_num=%d", $sid, $week), ARRAY_A);
+        $st  = ($row && !empty($row['short_term_saved_at'])) ? (string) $row['short_term_plan_text'] : '';
+        return array('row' => $row, 'plans' => $plans, 'short_term' => $st, 'short_term_withheld' => $st !== '' && $this->withheld($sid, 'rag:' . $week . ':short_term', (int) ($row['short_term_commitment_id'] ?? 0)));
+    }
+
+    /** "{Child}'s view": what the child saw, read-only. */
+    private function parent_child_view_html($sid, $week, $child) {
+        $it  = $this->parent_week_items($sid, $week);
+        $row = $it['row'];
+        $looked = '<em>This answer is being looked at.</em>';
+        $h  = '<div class="mfsd-pt__parent mfsd-rag-childview">';
+        if (!$row) {
+            $stage = $this->week_stage($sid, $week);
+            return $h . '<p>' . esc_html($child) . ' hasn\'t finished Week ' . (int) $week . ' yet (' . esc_html(strtolower($stage['label'])) . ').</p></div>';
+        }
+        $h .= '<div class="mfsd-pt__section"><h3>Week ' . (int) $week . ' results</h3><p>🟢 Greens: ' . (int) $row['greens'] . ' &nbsp; 🟠 Ambers: ' . (int) $row['ambers'] . ' &nbsp; 🔴 Reds: ' . (int) $row['reds'] . '</p></div>';
+        if (!empty($row['ai_summary'])) {
+            $txt = (string) $row['ai_summary']; $this->extract_steps($txt);
+            $h .= '<div class="mfsd-pt__section"><h3>Steve\'s summary</h3>' . wpautop(esc_html($txt)) . '</div>';
+        }
+        if ($it['plans']) {
+            $h .= '<div class="mfsd-pt__section"><h3>Red Plans</h3><ul>';
+            foreach ($it['plans'] as $p) $h .= '<li><strong>' . esc_html($p['q_text']) . '</strong><br>' . ($p['withheld'] ? $looked : esc_html($p['plan_text'])) . '</li>';
+            $h .= '</ul></div>';
+        }
+        $h .= '<div class="mfsd-pt__section"><h3>Plan for next week</h3><p>'
+            . ($it['short_term'] === '' ? esc_html($child) . ' is still choosing next week\'s plan.' : ($it['short_term_withheld'] ? $looked : esc_html($it['short_term'])))
+            . '</p></div>';
+        return $h . '</div>';
+    }
+
+    public function api_parent_summary($req) {
+        $viewer = (int) get_current_user_id();
+        $sid    = absint($req->get_param('student_id'));
+        $week   = max(1, min(6, (int) $req->get_param('week')));
+        $linked = MFSD_Parent_Tabs::assert_linked($viewer, $sid);
+        if (is_wp_error($linked)) return $linked;
+        $flags = $this->parent_flags($sid);
+        return new WP_REST_Response(array('ok' => true, 'html' => $this->parent_panel_html($sid, $week, $flags, $viewer), 'has_open_flag' => !empty($flags)), 200);
+    }
+
+    private function parent_panel_html($sid, $week, array $flags, $viewer) {
+        global $wpdb;
+        $child    = MFSD_Parent_Tabs::child_first_name($sid);
+        $fallback = MFSD_Parent_Tabs::concern_fallback_html($flags, $child);
+        $lead     = $flags ? MFSD_Parent_Tabs::CONCERN_TITLE : '';
+        $it       = $this->parent_week_items($sid, $week);
+        $row      = $it['row'];
+        // The week is finished when the plan is saved (or it was completed under 7.4.0) — not when ai_summary
+        // exists: an empty child summary (Steve down, or saving off) used to leave this message up for good (review).
+        $stage = $this->week_stage($sid, $week);
+        if (!$row || $stage['stage'] !== 'completed') {
+            $msg = ($row && $stage['stage'] === 'plan')
+                ? esc_html($child) . ' is choosing their plan for next week, the last step. Steve\'s parent summary will appear here once they have.'
+                : esc_html($child) . ' hasn\'t finished Week ' . (int) $week . ' yet. Steve\'s parent summary will appear here once they have.';
+            return '<div class="mfsd-pt__parent">' . $fallback . '<p>' . $msg . '</p></div>';
+        }
+        $text = (string) ($row['parent_ai_summary'] ?? '');
+        if ($text === '') {
+            $text = $this->generate_parent_summary($sid, $week, $it, $flags, $child);
+            if ($text !== '') $wpdb->update($wpdb->prefix . self::TBL_WEEK_SUMMARIES, array('parent_ai_summary' => $text), array('id' => (int) $row['id']));
+        }
+        if ($text === '') {
+            return '<div class="mfsd-pt__parent">' . $fallback . '<p>Steve\'s parent summary isn\'t available right now. Please try again in a few minutes.</p></div>';
+        }
+        return MFSD_Parent_Tabs::build_parent_html($text, $lead, $fallback);
+    }
+
+    private function generate_parent_summary($sid, $week, array $it, array $flags, $child) {
+        global $wpdb;
+        $row = $it['row'];
+        $age = function_exists('mfsd_get_student_age') ? mfsd_get_student_age((int) $sid) : null;
+        $prev = '';
+        $a = $wpdb->prefix . self::TBL_ANSWERS_RAG;
+        for ($w = 1; $w < $week; $w++) {
+            $pr = $wpdb->get_row($wpdb->prepare("SELECT SUM(answer='R') r, SUM(answer='A') am, SUM(answer='G') g FROM $a WHERE user_id=%d AND week_num=%d", $sid, $w), ARRAY_A);
+            if ($pr && ($pr['r'] || $pr['am'] || $pr['g'])) $prev .= "Week $w: {$pr['g']} Green, {$pr['am']} Amber, {$pr['r']} Red\n";
+        }
+        $plans = '';
+        foreach ($it['plans'] as $p) $plans .= '- Red on "' . $p['q_text'] . '". Their plan: "' . ($p['withheld'] ? '(not shown)' : $p['plan_text']) . "\"\n";
+        $st = $it['short_term'] === '' ? '(not chosen yet)' : ($it['short_term_withheld'] ? '(not shown)' : $it['short_term']);
+        $commitments = $this->commitments_block($sid, $week, true);
+
+        $concerns = '';
+        if ($flags) {
+            // Parent-visible flags only: a 'moderation' one here has been released, so it is handled as urgent.
+            $urgent = (bool) array_intersect(array('urgent', 'moderation'), array_column($flags, 'severity'));
+            foreach ($flags as $f) {
+                $sev = in_array($f['severity'], array('urgent', 'moderation'), true) ? 'urgent' : 'concern';
+                $concerns .= "- $sev — {$f['item_text']}" . (!empty($f['reason_text']) ? ': "' . $f['reason_text'] . '"' : '') . "\n";
+            }
+            if ($urgent) $concerns .= "(At least one is urgent.)\n";
+        }
+
+        $p  = "You are SteveGPT, Steve Sallis's coach, writing for the PARENT of {$child}" . ($age ? ", aged {$age}" : '') . ". ";
+        $p .= "Clear, warm adult language, UK English, about 300 words. Don't assume anything about family structure, money or circumstances. Never mention personality types or codes.\n\n";
+        $p .= "Their child has just done the Week $week RAG check-in: they rate themselves Red (struggling), Amber (mixed) or Green (confident) on the same questions each week, write a plan for each Red, and choose one plan for next week.\n\n";
+        $p .= "THIS WEEK: {$row['greens']} Green, {$row['ambers']} Amber, {$row['reds']} Red.\n";
+        if ($prev !== '') $p .= "EARLIER WEEKS:\n$prev";
+        if ($plans !== '') $p .= "\nRED PLANS (child's words):\n$plans";
+        $p .= "\nPLAN FOR NEXT WEEK: \"$st\"\n";
+        $p .= $commitments;
+        $p .= "\nUse these section markers, in this order:\n";
+        if ($flags) $p .= "[SECTION:Something to be aware of] (ALWAYS FIRST)\n";
+        $p .= "[SECTION:This week] [SECTION:Their plans] " . ($commitments !== '' ? "[SECTION:Commitments] " : '') . "[SECTION:How you can help]\n";
+        $p .= "Handle repeated reds with care, using Steve's Solutions Mindset (no failure, only feedback). Never quote anything shown as (not shown).\n";
+
+        $out = $this->steve_task('parent_summary', $p, array(
+            'child_name' => $child, 'age' => $age ? (string) $age : '', 'week' => (int) $week,
+            'reds' => (int) $row['reds'], 'ambers' => (int) $row['ambers'], 'greens' => (int) $row['greens'],
+            'previous_weeks' => $prev, 'red_plans' => $plans, 'short_term_plan' => $st,
+            'commitments' => $commitments, 'concerns' => $concerns,
+        ), (int) $sid, $this->sg_ctx('parent_summary', $sid, array('flags' => array_map(function ($f) { if (($f['severity'] ?? '') === 'moderation') $f['severity'] = 'urgent'; return $f; }, $flags), 'field' => 'parent_summary')));
+        if ($out === '') return '';
+        $note = MFSD_Parent_Tabs::extract_parent_note($out);
+        if ($note !== '' && function_exists('mfsd_concern_save_parent_note')) mfsd_concern_save_parent_note((int) $sid, self::SG_SOURCE, $note);
+        return trim(preg_replace('/\[\s*(?!SECTION\b)[A-Z_]{2,}\s*:[^\]]*\]/i', '', $out));
     }
 
     private function calculate_disc_results($uid,$week) {
@@ -796,6 +1354,12 @@ final class MFSD_Weekly_RAG {
         $uid=(int)$req->get_param('user_id'); $week=max(1,min(6,(int)$req->get_param('week')));
         if(!$uid||!$week)return new WP_REST_Response(array('ok'=>false,'error'=>'Missing params'),400);
         $del=0;
+        // 8.0.0: an open short-term card from this week is dropped (red-plan cards are left alone).
+        $wst=$wpdb->prefix.self::TBL_WEEK_SUMMARIES;
+        if ($this->has_column($wst,'short_term_commitment_id') && function_exists('mfsd_update_commitment')) {
+            $stc=(int)$wpdb->get_var($wpdb->prepare("SELECT short_term_commitment_id FROM $wst WHERE user_id=%d AND week_num=%d",$uid,$week));
+            if ($stc) { $r=mfsd_update_commitment($stc,array('status'=>'dropped'),$uid); if (is_wp_error($r)) error_log('[MFSD RAG] reset: card '.$stc.' not dropped: '.$r->get_error_message()); }
+        }
         $tables=array(
             $wpdb->prefix.self::TBL_ANSWERS_RAG    =>array('user_id'=>$uid,'week_num'=>$week),
             $wpdb->prefix.self::TBL_ANSWERS_MB     =>array('user_id'=>$uid,'week_num'=>$week),
@@ -880,7 +1444,9 @@ final class MFSD_Weekly_RAG {
             'red_suggestions' => ['Red plan suggestions (must output INTRO:/SUGGESTION_1-3: lines)', ['student_name', 'age_desc', 'question_text', 'last_plan', 'previous_answer']],
             'question_chat'   => ['Question chat',       ['student_name', 'age_desc', 'week', 'question_text', 'question_type', 'previous_answers', 'message']],
             'red_chat'        => ['Red plan chat',       ['student_name', 'age_desc', 'week', 'question_text', 'question_type', 'previous_answers', 'message']],
-            'summary'         => ['Week summary',        ['student_name', 'age_desc', 'week', 'reds', 'ambers', 'greens', 'total_score', 'personality', 'communication_style', 'dream_jobs', 'plan_context']],
+            'summary'         => ['Week summary (STEP: lines are added automatically)', ['student_name', 'age_desc', 'week', 'reds', 'ambers', 'greens', 'total_score', 'personality', 'communication_style', 'dream_jobs', 'plan_context', 'commitments']],
+            'red_plan_title'  => ['Red Plan card title (one line, max 12 words)', ['question_text', 'plan_text']],
+            'parent_summary'  => ['Weekly parent summary ([SECTION:] markers, PARENT_NOTE: line)', ['child_name', 'age', 'week', 'reds', 'ambers', 'greens', 'previous_weeks', 'red_plans', 'short_term_plan', 'commitments', 'concerns']],
         ];
         foreach ($task_slots as $key => $def) {
             $slots[] = [
@@ -918,7 +1484,11 @@ final class MFSD_Weekly_RAG {
         return count($styles) > 1 ? $styles[0] . ', and also ' . $styles[1] : $styles[0];
     }
 
-    private function steve_task(string $slot, string $fallback_prompt, array $tokens, int $user_id): string {
+    /**
+     * $ctx: safeguarding context (Prompt Layer §3.2), passed as query()'s 'safeguarding' option so SteveGPT
+     * 14.0.0+ appends the block and strips markers. $append is added after a template render too (e.g. STEP rule).
+     */
+    private function steve_task(string $slot, string $fallback_prompt, array $tokens, int $user_id, array $ctx = array(), string $append = ''): string {
         $chatbot_id = get_option('mfsd_stevegpt_map_rag_' . $slot, '');
         if (!$chatbot_id || !class_exists('SteveGPT_Chatbot')) return '';
 
@@ -926,8 +1496,9 @@ final class MFSD_Weekly_RAG {
             $chatbot = SteveGPT_Chatbot::get($chatbot_id);
             $config  = $chatbot->get_config();
             $prompt  = !empty($config['prompt_template']) ? $chatbot->render_prompt($tokens) : $fallback_prompt;
+            if ($append !== '') $prompt .= "\n\n" . $append;
             $prompt .= "\n\n" . self::NO_CODES_RULE;
-            return (string) $chatbot->query($prompt, $user_id);
+            return (string) $chatbot->query($prompt, $user_id, $ctx ? array('safeguarding' => $ctx) : array());
         } catch (Exception $e) {
             error_log('[MFSD RAG] SteveGPT task error (' . $slot . '): ' . $e->getMessage());
             return '';
@@ -1202,3 +1773,14 @@ final class MFSD_Weekly_RAG {
 }
 
 MFSD_Weekly_RAG::instance();
+
+if (!function_exists('mfsd_rag_week_stage')) {
+    /**
+     * Week stage for Parent Portal / Course Progress (spec §6).
+     * @return array{stage:string,label:string,short_term_plan:?string} stage: not_started|in_progress|plan|completed;
+     *         'plan' → "Choosing next week's plan".
+     */
+    function mfsd_rag_week_stage(int $user_id, int $week): array {
+        return MFSD_Weekly_RAG::instance()->week_stage($user_id, $week);
+    }
+}

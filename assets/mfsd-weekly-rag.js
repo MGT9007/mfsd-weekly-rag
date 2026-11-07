@@ -1,5 +1,4 @@
 (function () {
-  console.log('MFSD_RAG_CFG', window.MFSD_RAG_CFG);
   const cfg = window.MFSD_RAG_CFG || {};
   const root = document.getElementById("mfsd-rag-root");
   if (!root) return;
@@ -209,7 +208,7 @@
       wrap.appendChild(card); root.replaceChildren(wrap); return;
     }
 
-    if (status.status === 'completed') { await renderSummary(); return; }
+    if (status.status === 'completed' || status.stage === 'plan' || status.stage === 'completed') { await renderSummary(); return; }
     if (status.status === 'in_progress') {
       await loadQuestions();
       await resumeFromLastQuestion(status.last_question_id, status.answered_question_ids || []);
@@ -217,7 +216,7 @@
     }
 
     const wrap = el("div","rag-wrap"); const card = el("div","rag-card");
-    card.appendChild(el("h2","rag-title","Week " + week + " — RAG + MBTI Tracker"));
+    card.appendChild(el("h2","rag-title","Week " + week + " — RAG Tracker"));
 
     if (status.previous_week_summary) {
       const ps = status.previous_week_summary;
@@ -227,18 +226,17 @@
       const gs = el("div","stat"); gs.textContent = "🟢 Greens: " + ps.greens; stats.appendChild(gs);
       const as = el("div","stat"); as.textContent = "🟠 Ambers: " + ps.ambers; stats.appendChild(as);
       const rs = el("div","stat"); rs.textContent = "🔴 Reds: " + ps.reds; stats.appendChild(rs);
-      if (ps.mbti_type) { const ms = el("div","stat"); ms.textContent = "MBTI: " + ps.mbti_type; stats.appendChild(ms); }
       box.appendChild(stats); card.appendChild(box);
     }
 
     if (status.intro_message) {
       const ib = el("div","rag-intro-msg"); ib.textContent = status.intro_message; card.appendChild(ib);
     } else {
-      card.appendChild(el("p","rag-sub","High Performance Pathway RAG + MBTI Weekly Tracker.\nGreens = strengths ; Ambers = mixed ; Reds = needs support.\n"));
+      card.appendChild(el("p","rag-sub","High Performance Pathway weekly RAG tracker.\nGreens = strengths ; Ambers = mixed ; Reds = needs support.\n"));
     }
 
     const btn = el("button","rag-btn","Begin RAG");
-    btn.onclick = async () => { await loadQuestions(); idx = 0; stack = []; await renderQuestion(); };
+    btn.onclick = async () => { await loadQuestions(); await renderReviewStep(async () => { idx = 0; stack = []; await renderQuestion(); }); };
     card.appendChild(btn); wrap.appendChild(card); root.replaceChildren(wrap);
   }
 
@@ -466,6 +464,8 @@
         if(mfsdTTS.supported){setTimeout(()=>mfsdTTS.speakWithReveal(sd.ai,asd),400);}else{asd.textContent=sd.ai;}
       }
 
+      renderPlanCard(card, sd, weekNum);
+
       const ag=el("button","rag-btn","Back to intro"); ag.onclick=()=>window.location.reload(); card.appendChild(ag);
       wrap.appendChild(card); root.replaceChildren(wrap);
 
@@ -476,7 +476,7 @@
     } catch(err){hideLoadingOverlay();alert('Failed to load summary: '+err.message);}
   }
 
-  function showWeekChart(weekNum,weeksData){const c=document.getElementById('chart-display');if(!c)return;const wd=weeksData[weekNum];if(!wd||!wd.completed)return;c.innerHTML='';c.appendChild(el("h3","rag-week-chart-title","Week "+weekNum+" Results"));const st=el("div","rag-stats");st.appendChild(el("div","stat","Reds: "+wd.rag.reds));st.appendChild(el("div","stat","Ambers: "+wd.rag.ambers));st.appendChild(el("div","stat","Greens: "+wd.rag.greens));st.appendChild(el("div","stat","Score: "+wd.rag.total_score));c.appendChild(st);const cv=document.createElement('canvas');cv.width=400;cv.height=400;c.appendChild(cv);setTimeout(()=>drawPieChart(cv,parseInt(wd.rag.reds),parseInt(wd.rag.ambers),parseInt(wd.rag.greens)),50);if(wd.mbti)c.appendChild(el("div","rag-mbti-week","MBTI: "+wd.mbti));}
+  function showWeekChart(weekNum,weeksData){const c=document.getElementById('chart-display');if(!c)return;const wd=weeksData[weekNum];if(!wd||!wd.completed)return;c.innerHTML='';c.appendChild(el("h3","rag-week-chart-title","Week "+weekNum+" Results"));const st=el("div","rag-stats");st.appendChild(el("div","stat","Reds: "+wd.rag.reds));st.appendChild(el("div","stat","Ambers: "+wd.rag.ambers));st.appendChild(el("div","stat","Greens: "+wd.rag.greens));st.appendChild(el("div","stat","Score: "+wd.rag.total_score));c.appendChild(st);const cv=document.createElement('canvas');cv.width=400;cv.height=400;c.appendChild(cv);setTimeout(()=>drawPieChart(cv,parseInt(wd.rag.reds),parseInt(wd.rag.ambers),parseInt(wd.rag.greens)),50);}
 
   function drawPieChart(canvas,reds,ambers,greens){const ctx=canvas.getContext('2d');const total=reds+ambers+greens;if(total===0)return;const cx=canvas.width/2,cy=(canvas.height-60)/2,r=Math.min(cx,cy)-20;const ra=(reds/total)*2*Math.PI,aa=(ambers/total)*2*Math.PI,ga=(greens/total)*2*Math.PI;let ca=-Math.PI/2;ctx.clearRect(0,0,canvas.width,canvas.height);if(reds>0){ctx.fillStyle='#d9534f';ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,ca,ca+ra);ctx.closePath();ctx.fill();ca+=ra;}if(ambers>0){ctx.fillStyle='#f0ad4e';ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,ca,ca+aa);ctx.closePath();ctx.fill();ca+=aa;}if(greens>0){ctx.fillStyle='#5cb85c';ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,r,ca,ca+ga);ctx.closePath();ctx.fill();}const ly=canvas.height-50,lx=30;ctx.font='bold 14px Arial';ctx.fillStyle='#d9534f';ctx.fillRect(lx,ly,20,20);ctx.fillStyle='#000';ctx.fillText('Red: '+Math.round((reds/total)*100)+'%',lx+25,ly+15);ctx.fillStyle='#f0ad4e';ctx.fillRect(lx+120,ly,20,20);ctx.fillStyle='#000';ctx.fillText('Amber: '+Math.round((ambers/total)*100)+'%',lx+145,ly+15);ctx.fillStyle='#5cb85c';ctx.fillRect(lx+260,ly,20,20);ctx.fillStyle='#000';ctx.fillText('Green: '+Math.round((greens/total)*100)+'%',lx+285,ly+15);}
 
@@ -646,6 +646,134 @@
     };
     card.appendChild(saveBtn); updateWordCount();
     wrap.appendChild(card); root.replaceChildren(wrap);
+  }
+
+  // ============================================================================
+  // 8.0.0 — REVIEW YOUR CARDS (Commitments §13.3, spec §7)
+  // ============================================================================
+  async function renderReviewStep(next) {
+    const MC = window.MFSDCommitments;
+    if (!cfg.commitments || !MC) return next();
+    let cards = [];
+    try { const r = await MC.api('GET', ''); cards = (r && r.cards) || []; } catch (e) { return next(); }
+    const isDue = c => c.review_week !== null && c.review_week !== undefined && Number(c.review_week) <= Number(week);
+    const due = cards.filter(c => ['open','carried','not_yet'].includes(c.status) && isDue(c));
+    const waiting = cards.filter(c => c.status === 'checked_in' && isDue(c));
+    if (!due.length) return next();
+
+    const wrap = el("div","rag-wrap"); const card = el("div","rag-card rag-review");
+    card.appendChild(el("h2","rag-title","Review your cards"));
+    card.appendChild(el("p","rag-sub","Before this week's questions: how did you get on with these?"));
+    const list = el("div","rag-review-list"); card.appendChild(list);
+    const done = new Set();
+    const go = el("button","rag-btn rag-review-continue","Start this week's questions"); go.disabled = true;
+    const tick = () => { go.disabled = done.size < due.length; };
+
+    const mark = (row, cls, text, id) => {
+      row.classList.remove('is-green','is-amber','is-red','is-error'); row.classList.add(cls);
+      const st = row.querySelector('.rag-review-status'); st.textContent = text;
+      const acts = row.querySelector('.rag-review-actions'); if (acts) acts.replaceChildren();
+      done.add(id); tick();
+    };
+    const fail = (row, id) => mark(row, 'is-error', "Couldn't save — you can carry on.", id);
+
+    due.forEach(c => {
+      const row = el("div","rag-review-row");
+      const top = el("div","rag-review-top");
+      top.appendChild(el("span","rag-review-src",(c.icon ? c.icon + ' ' : '') + (c.label || '')));
+      row.appendChild(top);
+      row.appendChild(el("div","rag-review-card-title",c.title));
+      if (c.status_line) row.appendChild(el("div","rag-review-line",c.status_line));
+      row.appendChild(el("div","rag-review-status",""));
+      const acts = el("div","rag-review-actions");
+      const bDone = el("button","rag-review-btn is-done","Done");
+      const bStarted = el("button","rag-review-btn is-started","Started");
+      const bNot = el("button","rag-review-btn is-notyet","Not yet");
+      [bDone,bStarted,bNot].forEach(b => { b.type = 'button'; acts.appendChild(b); });
+      row.appendChild(acts);
+
+      bDone.onclick = () => MC.openCheckin(c, { onDone: () => mark(row, 'is-green', 'Done — checked in. Well done!', c.id) });
+      bStarted.onclick = async () => {
+        bStarted.disabled = true;
+        try { await MC.review(c.id, 'started', week); mark(row, 'is-amber', 'Started — keep it going this week.', c.id); }
+        catch (e) { fail(row, c.id); }
+      };
+      bNot.onclick = async () => {
+        acts.replaceChildren(el("div","rag-review-thinking","Steve is thinking…"));
+        let q = '';
+        try { const r = await MC.reviewQuestion(c.id); q = (r && r.question) || ''; } catch (e) { /* fallback below */ }
+        acts.replaceChildren();
+        acts.appendChild(el("p","rag-review-question", q || "No problem. What's one thing that would help you start?"));
+        const keep = el("button","rag-review-btn is-started","Keep it going");
+        const drop = el("button","rag-review-btn is-notyet","Drop it");
+        [keep,drop].forEach(b => { b.type = 'button'; acts.appendChild(b); });
+        keep.onclick = async () => { keep.disabled = drop.disabled = true;
+          try { await MC.review(c.id, 'carry', week); mark(row, 'is-red', 'Not yet — kept for next week.', c.id); } catch (e) { fail(row, c.id); } };
+        drop.onclick = async () => { keep.disabled = drop.disabled = true;
+          try { await MC.review(c.id, 'drop', week); mark(row, 'is-red', 'Dropped. That\'s OK — you learned something.', c.id); } catch (e) { fail(row, c.id); } };
+      };
+      list.appendChild(row);
+    });
+
+    waiting.forEach(c => {
+      const row = el("div","rag-review-row is-green");
+      row.appendChild(el("div","rag-review-card-title",c.title));
+      row.appendChild(el("div","rag-review-line",c.status_line || 'Checked in'));
+      list.appendChild(row);
+    });
+
+    go.onclick = () => next();
+    card.appendChild(go); wrap.appendChild(card); root.replaceChildren(wrap);
+  }
+
+  // ============================================================================
+  // 8.0.0 — YOUR PLAN FOR NEXT WEEK (spec §5, §9)
+  // ============================================================================
+  function renderPlanCard(card, sd, weekNum) {
+    const box = el("div","rag-plan");
+    box.appendChild(el("h3","rag-plan-title","Your plan for next week"));
+    if (sd.short_term_plan) { box.appendChild(el("p","rag-plan-saved","✅ " + sd.short_term_plan)); card.appendChild(box); return; }
+    // 'plan' = questions done, plan not saved. A week completed under 7.4.0 ('completed', no plan yet) gets the card too (review).
+    if (sd.stage !== 'plan' && sd.stage !== 'completed') return;
+    const max = cfg.shortTermMax || 140;
+    box.appendChild(el("p","rag-plan-sub","Pick one small thing to do next week, or write your own."));
+    const ta = document.createElement('textarea'); ta.className = 'rag-plan-input'; ta.maxLength = max; ta.rows = 3;
+    ta.setAttribute('aria-label','Your plan for next week'); ta.placeholder = 'This week I will…';
+    const count = el("div","rag-plan-count","0 / " + max);
+    const err = el("div","rag-plan-error",""); err.setAttribute('role','alert');
+    const save = el("button","rag-btn rag-plan-save","Save my plan"); save.type = 'button'; save.disabled = true;
+    const upd = () => { const w = ta.value.trim().split(/\s+/).filter(Boolean).length; count.textContent = ta.value.length + ' / ' + max; save.disabled = w < 3; };
+    if (Array.isArray(sd.steps) && sd.steps.length) {
+      const chips = el("div","rag-plan-chips");
+      sd.steps.forEach(st => { const b = el("button","rag-plan-chip",st); b.type = 'button'; b.onclick = () => { ta.value = st.slice(0, max); upd(); ta.focus(); }; chips.appendChild(b); });
+      box.appendChild(chips);
+    }
+    ta.addEventListener('input', upd);
+    box.appendChild(ta); box.appendChild(count); box.appendChild(err); box.appendChild(save);
+    save.onclick = async () => {
+      save.disabled = true; save.textContent = 'Saving…'; err.textContent = '';
+      try {
+        const r = await fetch(cfg.restUrlShortTerm, { method:'POST', headers:{'Content-Type':'application/json','X-WP-Nonce':cfg.nonce||''}, credentials:'same-origin', body: JSON.stringify({ week: weekNum, plan_text: ta.value.trim() }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) throw new Error(d.error || 'Something went wrong. Please try again.');
+        renderPlanDone(box, d);
+      } catch (e) { err.textContent = e.message; save.textContent = 'Save my plan'; upd(); }
+    };
+    card.appendChild(box);
+  }
+
+  function renderPlanDone(box, d) {
+    box.replaceChildren();
+    box.classList.add('is-saved');
+    box.appendChild(el("h3","rag-plan-title","Your plan is saved"));
+    box.appendChild(el("p","rag-plan-saved","✅ " + d.short_term_plan));
+    if (Array.isArray(d.cards) && d.cards.length) {
+      box.appendChild(el("p","rag-plan-sub","These are now on your home screen. Show " + (d.parent_name || 'your parent') + " when you've done them."));
+      const ul = el("ul","rag-plan-cards"); d.cards.forEach(c => ul.appendChild(el("li","",c.title))); box.appendChild(ul);
+    }
+    if (d.course_end) {
+      box.appendChild(el("p","rag-plan-end","That's the end of the course. Your cards stay on your home screen. We'll look at them together in your next module."));
+    }
   }
 
   renderIntro();
